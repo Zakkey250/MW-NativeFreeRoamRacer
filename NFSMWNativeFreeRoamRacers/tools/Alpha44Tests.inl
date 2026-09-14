@@ -1,0 +1,38 @@
+    {
+        using encounter_route::KeepMovingPursuitPath;
+        expect(KeepMovingPursuitPath(false,false,3,false,20,true,150,1,10,1,50,150),"alpha44 useful straight road path retained");
+        expect(!KeepMovingPursuitPath(false,false,3,false,20,true,150,1,46,1,50,150),"alpha44 moving player refreshes stale endpoint");
+        expect(!KeepMovingPursuitPath(false,false,3,false,20,true,150,1,13,.7f,50,150),"alpha44 player turn refreshes route");
+        expect(KeepMovingPursuitPath(false,false,3,false,20,true,150,1,5,.2f,50,150),"alpha44 heading jitter alone does not churn paths");
+        expect(!KeepMovingPursuitPath(false,false,3,false,20,true,65,1,0,1,60,150),"alpha44 fast rival refreshes before old endpoint");
+        expect(KeepMovingPursuitPath(false,false,3,false,20,true,65,1,0,1,20,150),"alpha44 slow rival keeps same usable route");
+        expect(!KeepMovingPursuitPath(false,false,2,false,20,true,150,1,0,1,50,150),"alpha44 Direction fallback requests native path");
+        expect(!KeepMovingPursuitPath(false,false,3,true,20,true,150,1,0,1,50,150),"alpha44 crossed goal cannot retain path");
+        expect(!KeepMovingPursuitPath(false,false,3,false,20,true,150,1,NAN,1,50,150),"alpha44 invalid drift fails closed");
+        expect(!KeepMovingPursuitPath(false,false,3,false,20,true,150,1,0,NAN,50,150),"alpha44 invalid heading fails closed");
+        expect(!KeepMovingPursuitPath(false,false,3,false,20,true,150,1,0,1,NAN,150),"alpha44 invalid speed fails closed");
+        expect(!KeepMovingPursuitPath(false,false,3,false,20,true,150,1,0,1,50,-1),"alpha44 invalid gap fails closed");
+        expect(!KeepMovingPursuitPath(false,false,3,false,20,true,150,3,0,1,50,150),"alpha44 maximum path age remains bounded");
+        encounter_route::Pursuit p;const battle::Point f{0,0,1};
+        for(int i=0;i<10;++i)p.Update({4,0,0},f,{},f,.05f);
+        expect(!p.passing(),"alpha44 adjacent parallel corridor cannot release pursuit");
+        for(int i=0;i<10;++i)p.Update({0,2.5f,2},f,{},f,.05f);
+        expect(!p.passing(),"alpha44 vertical separation keeps road pursuit");
+        for(int i=0;i<10;++i)p.Update({0,0,3},f,{}, {.7f,0,.7f},.05f);
+        expect(!p.passing(),"alpha44 divergent junction headings keep road pursuit");
+        for(int i=0;i<5;++i)p.Update({0,0,3},f,{},f,.05f);
+        expect(p.passing(),"alpha44 aligned sustained close approach permits pass");
+        for(int i=0;i<31;++i)p.Update({0,0,3},f,{},f,.05f);
+        expect(!p.passing(),"alpha44 pass times out even when gap stays below 18m");
+        for(int i=0;i<10;++i)p.Update({0,0,3},f,{},f,.05f);
+        expect(!p.passing(),"alpha44 cooldown prevents repeated path cancellation");
+        for(int i=0;i<20;++i)p.Update({0,0,3},f,{},f,.05f);
+        expect(p.passing(),"alpha44 new opportunity after cooldown is allowed");
+        p.Update({6,0,3},f,{},f,.05f);
+        expect(!p.passing(),"alpha44 lateral divergence immediately reacquires route");
+        p.Reset();p.Update({0,0,3},f,{},f,NAN);
+        expect(!p.passing(),"alpha44 invalid elapsed time cannot open passing phase");
+        p.Update({0,0,3},f,{},f,100);
+        expect(p.passing(),"alpha44 long frame contributes at most bounded quarter second");
+        p.Reset();expect(!p.passing(),"alpha44 new race clears all pass state");
+    }

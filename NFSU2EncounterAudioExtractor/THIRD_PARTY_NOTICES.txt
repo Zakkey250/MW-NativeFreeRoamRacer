@@ -1,0 +1,29 @@
+THIRD-PARTY SOFTWARE / 第三者ソフトウェア
+
+The custom source terms cover the author's original code only; these components retain their own licenses.
+独自のソース利用条件は作者の独自部分のみを対象とし、第三者のライセンスは維持します。
+
+Python 3.14.5 and Windows runtime components:
+https://www.python.org/
+Licenses/Python-LICENSE.txt and Licenses/Python-Windows-LICENSE.txt
+The Windows license includes notices for bundled dependencies (including libffi) and additional conditions for Microsoft Distributable Code. Those conditions continue to apply.
+Windows版ライセンスに含まれる依存物の告知、およびMicrosoft配布コードの追加条件も適用されます。
+
+Tcl/Tk 8.6.15: https://www.tcl-lang.org/
+Licenses/Tcl-license.terms and Licenses/Tk-license.terms
+
+OpenSSL 3.0.20: https://github.com/openssl/openssl/tree/openssl-3.0.20
+Licenses/OpenSSL-LICENSE.txt (Apache License 2.0)
+
+zlib 1.3.1: https://github.com/madler/zlib/tree/v1.3.1
+Licenses/zlib-LICENSE.txt
+
+PyInstaller 6.16.0: https://github.com/pyinstaller/pyinstaller/tree/v6.16.0
+Licenses/PyInstaller-COPYING.txt includes the bootloader exception. The unmodified bootloader is combined with this application.
+
+External decoder (NOT BUNDLED): vgmstream and its codec libraries
+https://github.com/vgmstream/vgmstream/releases
+Download the official Windows CLI bundle yourself, retain its notices, and follow tools/vgmstream/README.md.
+vgmstreamとコーデックDLLは同梱していません。公式Windows CLI配布物を別途取得し、告知・ライセンスを保持してtools/vgmstream/README.mdに従って配置してください。
+
+No game archive or extracted audio is included. / ゲームデータ・抽出音声は同梱していません。

@@ -1,0 +1,14 @@
+.vs/
+.venv/
+__pycache__/
+*.pyc
+artifacts/
+build/
+dist/
+package/
+*.log
+*.dmp
+*.pdb
+*.obj
+*.user
+VehicleCatalog.cache.bin

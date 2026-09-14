@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{30A8D011-C880-4850-82FB-1B4F1E67EC70}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>NFSMWNativeFreeRoamRacers</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>false</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><WholeProgramOptimization>true</WholeProgramOptimization><CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)artifacts\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)artifacts\obj\$(Configuration)\</IntDir>
+    <TargetName>NFSMWNativeFreeRoamRacers</TargetName>
+    <TargetExt>.asi</TargetExt>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel><TreatWarningAsError>true</TreatWarningAsError><SDLCheck>true</SDLCheck><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp20</LanguageStandard>
+      <DisableSpecificWarnings>4099;4100;4201;4244;4310;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)third_party\minhook\include;$(ProjectDir)third_party\minhook\src;$(ProjectDir)third_party\minhook\src\hde;$(ProjectDir)third_party\NFSPluginSDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>Advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup><ClInclude Include="include\Logging.h" /><ClInclude Include="include\Runtime.h" /><ClInclude Include="include\VehicleCatalog.h" /><ClInclude Include="src\DynamicVehicleCatalog.inl" /><ClInclude Include="src\VehicleVariation.inl" /></ItemGroup>
+  <ItemGroup><ClInclude Include="src\EncounterPromptAssets.inl" /><ClInclude Include="include\EncounterPursuitPath.h" /></ItemGroup>
+  <ItemGroup><ClInclude Include="src\FrontendCatalogCache.inl" /><ClInclude Include="src\PersistentVehicleCatalog.inl" /></ItemGroup>
+  <ItemGroup><ClInclude Include="src\SpawnEligibility.inl" /></ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\EncounterBattleModel.h" /><ClInclude Include="include\EncounterText.h" /><ClInclude Include="include\EncounterWave.h" />
+    <ClInclude Include="src\EncounterSignal.inl" /><ClInclude Include="src\EncounterHudFrame.inl" /><ClInclude Include="src\EncounterVoice.inl" />
+    <ClInclude Include="src\EncounterGauge.inl" /><ClInclude Include="src\EncounterBattle.inl" />
+    <ClInclude Include="src\EncounterRaceSkill.inl" /><ClInclude Include="src\EncounterVolume.inl" />
+    <ClInclude Include="src\EncounterMinimap.inl" /><ClInclude Include="src\EncounterRoute.inl" /><ClInclude Include="include\EncounterRouteTrail.h" />
+    <ClInclude Include="src\AnchorRoadSeed.inl" /><ClInclude Include="include\EncounterEligibility.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Logging.cpp" /><ClCompile Include="src\Plugin.cpp" /><ClCompile Include="src\Runtime.cpp" />
+    <ClCompile Include="third_party\minhook\src\buffer.c" /><ClCompile Include="third_party\minhook\src\hook.c" /><ClCompile Include="third_party\minhook\src\trampoline.c" /><ClCompile Include="third_party\minhook\src\hde\hde32.c" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
