@@ -37,7 +37,7 @@
   <ItemGroup><ClInclude Include="include\Logging.h" /><ClInclude Include="include\Runtime.h" /><ClInclude Include="include\VehicleCatalog.h" /><ClInclude Include="src\DynamicVehicleCatalog.inl" /><ClInclude Include="src\VehicleVariation.inl" /></ItemGroup>
   <ItemGroup><ClInclude Include="src\EncounterPromptAssets.inl" /><ClInclude Include="include\EncounterPursuitPath.h" /></ItemGroup>
   <ItemGroup><ClInclude Include="src\FrontendCatalogCache.inl" /><ClInclude Include="src\PersistentVehicleCatalog.inl" /></ItemGroup>
-  <ItemGroup><ClInclude Include="src\SpawnEligibility.inl" /></ItemGroup>
+  <ItemGroup><ClInclude Include="src\SpawnEligibility.inl" /><ClInclude Include="include\EncounterCustomAI.h" /><ClInclude Include="src\EncounterCustomFollow.inl" /><ClInclude Include="include\EncounterDirectionalTrail.h" /><ClInclude Include="src\EncounterCustomDrive.inl" /><ClInclude Include="include\EncounterChaseSpeed.h" /><ClInclude Include="src\EncounterCustomSpeed.inl" /></ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\EncounterBattleModel.h" /><ClInclude Include="include\EncounterText.h" /><ClInclude Include="include\EncounterWave.h" />
     <ClInclude Include="src\EncounterSignal.inl" /><ClInclude Include="src\EncounterHudFrame.inl" /><ClInclude Include="src\EncounterVoice.inl" />

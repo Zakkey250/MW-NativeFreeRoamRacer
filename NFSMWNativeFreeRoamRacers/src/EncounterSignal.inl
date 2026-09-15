@@ -216,7 +216,22 @@ bool EncounterActionIsEngage(const EncounterAction& a) noexcept {
 
 #include "EncounterMessage.inl"
 
-bool ShowEncounterMessageUnsafe(void* hud,encounter_text::Id id) noexcept {
+bool EncounterResultHudAvailable(void* hud) noexcept {
+    if(!hud||!IsFreeRoam()) return false;
+    std::uint64_t features=0;void* frontend=nullptr;std::uint16_t flags=0xffff;
+    return AudioRead(static_cast<unsigned char*>(hud)+0x18,&features)&&features!=0&&
+        AudioRead(reinterpret_cast<void*>(Address(0x0091CB20)),&frontend)&&frontend&&
+        AudioRead(static_cast<unsigned char*>(frontend)+0x1E,&flags)&&flags==0;
+}
+void* CurrentEncounterResultHud() noexcept {
+    // Native IPlayer::GetHud (006F8F10) is mov eax,[ecx+28]; ret.
+    void* list=nullptr;void* player=nullptr;void* hud=nullptr;unsigned count=0;
+    if(!AudioRead(reinterpret_cast<void*>(Address(0x0092D884)),&count)||count==0||count>8||
+       !AudioRead(reinterpret_cast<void*>(Address(0x0092D87C)),&list)||!list||
+       !AudioRead(list,&player)||!player||!AudioRead(static_cast<unsigned char*>(player)+0x28,&hud))return nullptr;
+    return EncounterResultHudAvailable(hud)?hud:nullptr;
+}
+bool ShowEncounterMessageUnsafe(void* hud,encounter_text::Id id,const wchar_t* content) noexcept {
     void* object = nullptr;
     if (!SafeRead(static_cast<std::uint8_t*>(hud) + 4, &object) || !object) return false;
     using FindFn = void*(__thiscall*)(void*, void*);
@@ -237,22 +252,42 @@ bool ShowEncounterMessageUnsafe(void* hud,encounter_text::Id id) noexcept {
     void* text=reinterpret_cast<void*(__thiscall*)(void*,unsigned)>(Address(0x005B8550))(package,0x32A7A521);
     std::size_t written=0;
     const auto setter=reinterpret_cast<void(__thiscall*)(void*,const wchar_t*)>(Address(0x005BCD20));
-    if(!WriteEncounterMessageTree(text,encounter_text::Get(id,g_settings.encounterEnglish),setter,written)) {
+    if(!WriteEncounterMessageTree(text,content,setter,written)) {
         Log(LogLevel::Warning,"ENCOUNTER_MESSAGE rejected-layout id=%u noUnicodeWrites=1",unsigned(id));return false;
     }
     Log(LogLevel::Info,"ENCOUNTER_MESSAGE id=%u language=%s unicode=1 textLeaves=%u groupWrites=0",unsigned(id),g_settings.encounterEnglish?"en":"ja",unsigned(written));
     return true;
 }
 
-bool ShowEncounterMessage(void* hud,encounter_text::Id id) noexcept {
+bool TryEncounterMessage(void* hud,encounter_text::Id id,const wchar_t* content) noexcept {
     static bool disabled=false;
     if(disabled||!hud) return false;
-    __try {return ShowEncounterMessageUnsafe(hud,id);}
+    __try {return ShowEncounterMessageUnsafe(hud,id,content);}
     __except(EXCEPTION_EXECUTE_HANDLER) {
         disabled=true;
         Log(LogLevel::Warning,"ENCOUNTER_MESSAGE exception=%08X notificationsDisabled=1 battleUnaffected=1",GetExceptionCode());
         return false;
     }
+}
+
+struct EncounterPendingMessage {
+    encounter_text::Id id=encounter_text::Id::Start;
+    wchar_t text[192]{};ULONGLONG expires=0,next=0;
+};
+EncounterPendingMessage g_pendingEncounterMessage{};
+void FlushEncounterMessage() noexcept {
+    auto& m=g_pendingEncounterMessage;const auto now=GetTickCount64();
+    if(!m.expires)return;
+    if(now>=m.expires||!IsFreeRoam()){m={};return;}
+    if(now<m.next)return;m.next=now+100;
+    if(auto* hud=CurrentEncounterResultHud();hud&&TryEncounterMessage(hud,m.id,m.text))m={};
+}
+bool ShowEncounterMessage(void* hud,encounter_text::Id id,unsigned reward=1000) noexcept {
+    (void)hud; // Never dereference a cached HUD across pursuit/package transitions.
+    auto& m=g_pendingEncounterMessage;m={};m.id=id;
+    const auto content=encounter_text::Format(id,g_settings.encounterEnglish,reward);
+    wcsncpy_s(m.text,content.c_str(),_TRUNCATE);m.expires=GetTickCount64()+5000;
+    FlushEncounterMessage();return !m.expires;
 }
 
 void ObserveEncounterAction(void* hud, const EncounterAction& action) noexcept {

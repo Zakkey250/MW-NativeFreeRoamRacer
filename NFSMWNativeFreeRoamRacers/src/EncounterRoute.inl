@@ -12,6 +12,10 @@ bool EncounterPathHint(void* nav,std::uintptr_t caller,Vec3& position,Vec3& head
     EncounterNativeAI ai{};
     if(!ReadEncounterAI(g_battle.rival,ai)||ai.nav!=nav) return false;
     auto hint=g_battle.routeHint;
+    if(g_settings.encounterAIMode==encounter_custom::Mode::Custom) {
+        position={hint.position.x,hint.position.y,hint.position.z};
+        heading={hint.heading.x,hint.heading.y,hint.heading.z};return true;
+    }
     unsigned mode=0;std::uint8_t valid=0,crossed=0;int edges=0;std::int16_t segment=-1;
     if(AudioRead(static_cast<unsigned char*>(nav)+0x78,&mode)&&
        AudioRead(static_cast<unsigned char*>(nav)+0x50,&valid)&&
@@ -27,13 +31,25 @@ bool EncounterPathHint(void* nav,std::uintptr_t caller,Vec3& position,Vec3& head
     position={hint.position.x,hint.position.y,hint.position.z};
     heading={hint.heading.x,hint.heading.y,hint.heading.z};return true;
 }
-bool __fastcall EncounterPathHook(void* nav,void*,const Vec3* destination,const Vec3* direction,bool flag) {
+bool DispatchEncounterPath(void* nav,std::uintptr_t caller,const Vec3* destination,const Vec3* direction,bool flag) {
+    if(BlockCustomRoadQuery(nav,caller)) return false;
     Vec3 position{},heading{};
-    if(EncounterPathHint(nav,reinterpret_cast<std::uintptr_t>(_ReturnAddress()),position,heading)) {
+    if(g_settings.encounterAIMode==encounter_custom::Mode::Custom&&!g_battle.routeHint.valid&&
+        !g_battle.pursuit.passing()&&caller==Address(0x00428BCF)&&
+        g_encounterAdapterThread.load(std::memory_order_acquire)==GetCurrentThreadId()&&
+        g_battle.model.phase()==battle::Phase::Active&&g_battle.model.leader()==battle::Leader::Player) {
+        EncounterNativeAI ai{};
+        if(ReadEncounterAI(g_battle.rival,ai)&&ai.nav==nav) return false;
+    }
+    if(EncounterPathHint(nav,caller,position,heading)) {
         ++g_encounterNativeTrailRequests;
-        return g_originalEncounterPath(nav,&position,nullptr,flag);
+        return g_originalEncounterPath(nav,&position,
+            g_settings.encounterAIMode==encounter_custom::Mode::Custom?&heading:nullptr,flag);
     }
     return g_originalEncounterPath(nav,destination,direction,flag);
+}
+bool __fastcall EncounterPathHook(void* nav,void*,const Vec3* destination,const Vec3* direction,bool flag) {
+    return DispatchEncounterPath(nav,reinterpret_cast<std::uintptr_t>(_ReturnAddress()),destination,direction,flag);
 }
 void InstallEncounterPathHook() noexcept {
     if(!g_battleSurface||!g_settings.encounterSignalEnabled) return;

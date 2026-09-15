@@ -20,11 +20,13 @@
         write32(28,1);expect(!Parse(wav,pcm),"voice inconsistent format rejected");wav=good;
         for(std::size_t n=0;n<good.size();++n)
             expect(!Parse(std::span<const unsigned char>(good.data(),n),pcm),"voice every truncated prefix rejected");
-        const wchar_t* root=L"C:\\Program Files (x86)\\EA GAMES\\Need for Speed Most Wanted\\scripts\\NativeFreeRoamRacers\\encounter\\";
+        wchar_t root[MAX_PATH]{};
+        const auto rootLength=GetEnvironmentVariableW(L"NFR_TEST_VOICE_DIRECTORY",root,MAX_PATH);
+        if(rootLength>0&&rootLength<MAX_PATH) {
         unsigned counts[100][3]{};unsigned total=0,bad=0;
         const wchar_t* folders[]={L"start",L"player_victory",L"player_defeat"};
         for(unsigned stage=0;stage<3;++stage) {
-            const auto directory=std::wstring(root)+folders[stage]+L"\\";
+            const auto directory=std::wstring(root)+L"\\"+folders[stage]+L"\\";
             WIN32_FIND_DATAW file{};HANDLE find=FindFirstFileW((directory+L"*.wav").c_str(),&file);
             if(find==INVALID_HANDLE_VALUE) continue;
             do {
@@ -39,6 +41,7 @@
         unsigned complete=0;
         for(unsigned i=0;i<100;++i) if(counts[i][0]&&counts[i][1]&&counts[i][2]) ++complete;
         expect(total==599&&bad==0&&complete==5,"all 599 installed WAVs pass production decoder and five complete actors (read-only no playback)");
+        } else std::puts("SKIP optional owned-voice test: set NFR_TEST_VOICE_DIRECTORY (no installed path assumed)");
     }
     {
         using namespace NFSPluginSDK::MW05;
@@ -67,6 +70,13 @@
         };
         win();expect(AwardEncounterCash()&&profile->mTheCareerSettings.CurrentCash==3000,"won adapter pays exactly 1000 to captured active profile");
         expect(!AwardEncounterCash()&&profile->mTheCareerSettings.CurrentCash==3000,"duplicate finish cannot pay twice");
+        for(unsigned amount:{300u,3000u}) {
+            profile->mTheCareerSettings.CurrentCash=2000;g_battle.reward=amount;win();
+            expect(AwardEncounterCash()&&profile->mTheCareerSettings.CurrentCash==2000+int(amount),
+                "alpha57 captured Custom reward is exactly credited to active profile");
+            expect(!AwardEncounterCash(),"alpha57 variable cash still pays at most once");
+        }
+        g_battle.reward=1000;
         win();profile->mTheCareerSettings.CurrentCash=INT32_MAX-500;
         expect(!AwardEncounterCash()&&profile->mTheCareerSettings.CurrentCash==INT32_MAX-500,"reward overflow fails without mutation");
         win();g_battle.profile=nullptr;

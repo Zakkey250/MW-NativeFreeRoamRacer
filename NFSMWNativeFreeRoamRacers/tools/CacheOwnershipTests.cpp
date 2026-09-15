@@ -712,6 +712,12 @@ int RunCacheTests() {
 #include "Alpha46Tests.inl"
 #include "Alpha47Tests.inl"
 #include "Alpha50Tests.inl"
+#include "Alpha51Tests.inl"
+#include "Alpha52Tests.inl"
+#include "Alpha53Tests.inl"
+#include "Alpha54Tests.inl"
+#include "Alpha55Tests.inl"
+#include "Alpha57Tests.inl"
     VirtualFree(region, 0, MEM_RELEASE);
     return failures == 0 ? 0 : 1;
 }

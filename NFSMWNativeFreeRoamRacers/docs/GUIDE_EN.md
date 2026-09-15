@@ -2,7 +2,7 @@
 
 Adds roaming AI racers and one-on-one encounter battles to Need for Speed Most Wanted (2005).
 
-**alpha.50 is an alpha distribution, gameplay-validated on the development installation. Other car/mod combinations remain unverified.**
+**alpha.57 is an alpha distribution, gameplay-validated on the development installation. Other car/mod combinations remain unverified.**
 
 On first use, remain in the safehouse for about 2 seconds, then enter free roam and allow the initial vehicle scan and spawning to finish. Successful vehicle, price and stock-performance metadata is saved to `scripts/NativeFreeRoamRacers/VehicleCatalog.cache.bin`. Later launches reuse it when related data SHA-256 fingerprints match. Changed vehicle definitions/Unlimiter configuration or invalid caches trigger rebuilding. Modify game data only while the game is closed. Do not redistribute generated caches.
 
@@ -26,7 +26,7 @@ To uninstall, exit the game and remove only those three mod files. Optional voic
 ## Gameplay
 
 - Follow a roaming racer. When the upper-left challenge HUD appears, use the game's configured **Join Event** action. No fixed keyboard key or D-pad binding is required.
-- The leader chooses the road. Overtaking swaps the lead; separating the cars by 300 metres decides the battle. A win awards 1,000 cash.
+- The leader chooses the road. Overtaking swaps the lead; separating the cars by 300 metres decides the battle. Stable AI wins award 1,000 cash; Custom AI rewards depend on career Blacklist rank (below).
 - The upper-left gauge is green for a player lead and red for an opponent lead. Other racers managed by this mod temporarily lose their map markers during the battle.
 - When trailing by at least 100 metres, native GPS can guide you toward the opponent. A different user-selected destination takes priority.
 - Existing police patrols can discover roaming racers through native detection. A pursuit is not guaranteed on every encounter.
@@ -35,6 +35,8 @@ To uninstall, exit the game and remove only those three mod files. Optional voic
 
 |Setting|Default|
 |---|---|
+|Encounter AI mode|Custom AI (Stable also available)|
+|Custom AI leader drive output|1.25|
 |Maximum racers|6 (configurable 1–15)|
 |Population radius|600 m|
 |Minimap radius|200 m|
@@ -46,7 +48,25 @@ To uninstall, exit the game and remove only those three mod files. Optional voic
 
 Vehicle selection uses nearby price/performance ranks. Model variety is separate from vehicle count. Random appearance covers paint, body, hood and spoiler. Invalid selections are retried and then fall back to stock. Performance upgrades respect career unlocks; nitrous is equipped only when unlocked and supported by the car. Output multipliers are not speed or top-speed multipliers.
 
-Restart after editing the INI. Add `Language = en` under `[Encounter]` for English battle messages; omission selects Japanese. To disable background police detection, add `Enabled = 0` under `[BackgroundPolice]`.
+Restart after editing the INI. At the top of `[Encounter]`, set `Language = en` for English battle messages or `Language = ja` for Japanese. This does not change the base game's language or select different voice files. To disable background police detection, set `Enabled = 0` under `[BackgroundPolice]`.
+
+## AI modes, rewards and optional weapons
+
+Set `AIMode = Custom AI` or `AIMode = Stable` under `[Encounter]`, then restart. Existing INIs without this setting retain Stable behavior; add the setting to opt in. The supplied INI selects Custom AI. Preserve your other settings when updating.
+
+Custom AI records the player's leading trajectory and follows its general direction, without strictly retracing every point or forcing the traffic route. Catch-up speed requests help close the gap. Within 15 m, subject to direction/alignment checks, it switches to an overtaking attack while retaining speed assistance to avoid an abrupt slowdown. When the AI leads, `CustomAILeaderPowerScale = 1.25` supplies a drive-output boost. This is not a speed multiplier, teleport or guaranteed collision avoidance. Stable behavior is retained separately.
+
+Stable rewards remain 1,000 regardless of rank. Custom rewards are captured at battle start and rounded down to hundreds:
+
+|Blacklist rank|15|14|13|12|11|10|9|8|7|6|5|4|3|2|1|
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+|Cash|300|400|600|800|1,000|1,200|1,400|1,600|1,800|2,000|2,200|2,400|2,600|2,800|3,000|
+
+An unavailable/out-of-range career rank uses 300 in Custom mode. Defeats and disqualifications pay nothing. Lead and result messages can now display during a police pursuit; temporary HUD unavailability is retried for up to five seconds.
+
+Optional weapon integration supports verified MWArsenal builds only. During a battle, a successful player EMP or shockwave hit affecting another vehicle (including police) causes disqualification. Mere firing, misses, ordinary contact and harmless Turbo/jammer use do not. No weapon mod is required for ordinary encounters.
+
+**Arms Assist is not included. Its encounter-bridge build is not publicly released with alpha.57.** Spike-hit reporting and racers using EMP against police require that compatible build and remain pending for public users. If an older Arms Assist without the handshake is installed, weapon-hit observation is disabled to avoid hook conflicts; ordinary battles still work. The prepared racer EMP path targets police only, not the player. Unsupported weapon binaries disable integration rather than the core mod. Do not assume every MWArsenal version is compatible.
 
 ## Optional encounter voices
 

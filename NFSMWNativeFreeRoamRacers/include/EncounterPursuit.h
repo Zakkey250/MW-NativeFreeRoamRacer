@@ -8,7 +8,7 @@ class Pursuit {
 public:
     void Reset() noexcept { passing_=false; closeSeconds_=passSeconds_=cooldown_=0; }
     bool passing() const noexcept { return passing_; }
-    Trail::Destination Update(Point player,Point heading,Point rival,Point rivalHeading,float dt=.05f) noexcept {
+    Trail::Destination Update(Point player,Point heading,Point rival,Point rivalHeading,float dt=.05f,bool custom=false) noexcept {
         if(!battle::Finite(player)||!battle::Finite(rival)||
             !battle::Finite(heading)||!battle::Finite(rivalHeading)) {Reset();return {};}
         const auto forward=battle::UnitXZ(heading), other=battle::UnitXZ(rivalHeading);
@@ -19,16 +19,16 @@ public:
         const auto offset=battle::Sub(player,rival);
         const float lateral=std::abs(offset.x*forward.z-offset.z*forward.x);
         // Close cars on opposite roads / stacked roads are not a passing chance.
-        const bool sameDirection=aligned>=.85f&&std::abs(player.y-rival.y)<=2;
+        const bool sameDirection=aligned>=(custom?.65f:.85f)&&std::abs(player.y-rival.y)<=(custom?5.f:2.f);
         if(passing_) {
             passSeconds_+=dt;
-            if(gap>=18||!sameDirection||lateral>5||passSeconds_>=1.5f) {
+            if(gap>=(custom?70.f:18.f)||!sameDirection||lateral>(custom?18.f:5.f)||passSeconds_>=(custom?8.f:1.5f)) {
                 passing_=false;closeSeconds_=0;cooldown_=1;
             }
         } else {
             // Geometric corridor, not proof of road connectivity. Require a
             // sustained opportunity, and bound Direction mode at junctions.
-            if(gap<=5&&sameDirection&&lateral<=3&&cooldown_<=0) closeSeconds_+=dt;
+            if(gap<=(custom?15.f:5.f)&&sameDirection&&lateral<=(custom?12.f:3.f)&&cooldown_<=0) closeSeconds_+=dt;
             else closeSeconds_=0;
             if(closeSeconds_>=.25f){passing_=true;passSeconds_=0;}
         }

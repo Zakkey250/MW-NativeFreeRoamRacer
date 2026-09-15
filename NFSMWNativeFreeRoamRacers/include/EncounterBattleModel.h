@@ -26,7 +26,7 @@ struct Sample { Car player{}, rival{}; bool freeRoam=true, paused=false; };
 enum class Phase { Idle, Active, Won, Lost, Cancelled };
 enum class Leader { Rival, Player };
 enum class Event { None, Started, LeadChanged, Won, Lost, Cancelled };
-enum class Reason { None, InvalidSample, IdentityChanged, WorldEnded, Discontinuity };
+enum class Reason { None, InvalidSample, IdentityChanged, WorldEnded, Discontinuity, WeaponHit };
 struct Change {
     Event event=Event::None;
     Reason reason=Reason::None;
@@ -109,12 +109,17 @@ public:
     bool progressValid() const {return progressValid_;}
     bool roleTrusted() const {return roleTrusted_;}
     void Reset() {*this=Model{};}
+    Change Forfeit() {
+        if(phase_!=Phase::Active) return {};
+        phase_=Phase::Lost;passSeconds_=0;
+        return {Event::Lost,Reason::WeaponHit,0};
+    }
     Change Cancel(Reason reason) {
         if(phase_!=Phase::Active) return {};
         phase_=Phase::Cancelled; passSeconds_=0;
         return {Event::Cancelled,reason,0};
     }
-    Change Start(const Sample& s) {
+    Change Start(const Sample& s,unsigned reward=fixedReward) {
         if(phase_==Phase::Active || !s.freeRoam || s.paused || !Valid(s.player) || !Valid(s.rival) ||
             s.player.identity.vehicle==s.rival.identity.vehicle) return {};
         const auto relative=Sub(s.rival.position,s.player.position);
@@ -125,6 +130,7 @@ public:
             std::abs(relative.x*axis.z-relative.z*axis.x)>20 ||
             DotXZ(UnitXZ(s.player.forward),axis)<=0) return {};
         Reset(); phase_=Phase::Active; leader_=Leader::Rival; previous_=s;
+        reward_=reward>=300&&reward<=3000&&reward%100==0?reward:0;
         gap_=separation; trail_.Seed(s.player.position,s.rival.position,axis);
         return {Event::Started,Reason::None,0};
     }
@@ -178,7 +184,7 @@ public:
         if(gap_>=separationToFinish&&roleTrusted_) {
             phase_=leader_==Leader::Player?Phase::Won:Phase::Lost;
             return {phase_==Phase::Won?Event::Won:Event::Lost,Reason::None,
-                    phase_==Phase::Won?fixedReward:0};
+                    phase_==Phase::Won?reward_:0};
         }
         return result;
     }
@@ -191,6 +197,7 @@ private:
         return !std::isfinite(distance)||distance>bound;
     }
     Phase phase_=Phase::Idle;
+    unsigned reward_=fixedReward;
     Leader leader_=Leader::Rival;
     Sample previous_{};
     SharedTrail trail_{};

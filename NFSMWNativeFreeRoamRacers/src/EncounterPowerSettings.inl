@@ -8,6 +8,13 @@ float ParseEncounterPowerScale(const wchar_t* text,float fallback) noexcept {
     return std::clamp(value,1.0f,2.0f);
 }
 void LoadEncounterPowerSettings(const wchar_t* path) noexcept {
+    wchar_t mode[128]{},leaderPower[128]{};
+    const auto modeCount=GetPrivateProfileStringW(L"Encounter",L"AIMode",L"Stable",mode,128,path);
+    g_settings.encounterAIMode=modeCount>=127?encounter_custom::Mode::Stable:encounter_custom::ParseMode(mode);
+    const auto powerCount=GetPrivateProfileStringW(L"Encounter",L"CustomAILeaderPowerScale",L"1.25",leaderPower,128,path);
+    g_settings.customAILeaderPowerScale=powerCount>=127?1.25f:ParseEncounterPowerScale(leaderPower,1.25f);
+    Log(LogLevel::Info,"ENCOUNTER_AI_CONFIG mode=%s leaderPower=%.3f restartRequired=1",
+        encounter_custom::Name(g_settings.encounterAIMode),g_settings.customAILeaderPowerScale);
     const wchar_t* keys[]={L"PowerScale0To100",L"PowerScale100To200",L"PowerScale200To300"};
     const float defaults[]={1.50f,1.75f,2.00f};
     for(unsigned i=0;i<3;++i) {

@@ -7,8 +7,13 @@
 #include "EncounterPursuit.h"
 #include "EncounterPursuitPath.h"
 #include "EncounterCommittedPath.h"
+#include "EncounterCustomAI.h"
+#include "EncounterDirectionalTrail.h"
+#include "EncounterChaseSpeed.h"
 #include <NFSPluginSDK/Game.MW05/Types/WRoadNav.h>
 #include "EncounterText.h"
+#include "EncounterReward.h"
+#include "EncounterWeapons.h"
 #include "EncounterWave.h"
 
 #include <Windows.h>
@@ -163,6 +168,8 @@ struct Settings {
     bool encounterEnglish = false;
     bool backgroundPoliceEnabled = true;
     std::array<float,3> encounterPowerScales{1.50f,1.75f,2.00f};
+    encounter_custom::Mode encounterAIMode=encounter_custom::Mode::Stable;
+    float customAILeaderPowerScale=1.25f;
     unsigned freeRoamAudioSlots = 4;
     std::size_t vehicleVariety = 5;
     bool randomAppearance = true;
@@ -1406,8 +1413,11 @@ bool QueueEncounterBattle(const VehicleSnapshot&,const VehicleSnapshot&) noexcep
 #include "EncounterSignal.inl"
 #include "EncounterBattle.inl"
 #include "BackgroundPolice.inl"
+#include "EncounterWeaponHits.inl"
+#include "EncounterArmedRacers.inl"
 
 void ClearWorld(const bool killManaged) noexcept {
+    g_pendingEncounterMessage={};ResetEncounterArmedRacers();
     ResetSpawnEligibility();
     ResetBackgroundPolice();
     // No cached vehicle dereference after the world has gone away.
@@ -1476,10 +1486,12 @@ void Update() {
         return;
     }
     UpdateEncounterBattle(*player, vehicles, dt);
+    FlushEncounterMessage();
     RefreshManaged(*player, vehicles, dt);
     Replenish(*player, vehicles, dt);
     UpdateEncounterCandidate(*player, vehicles, dt);
     UpdateBackgroundPolice(*player, vehicles, dt);
+    UpdateEncounterArmedRacers(*player,vehicles,dt);
     LogTelemetry(*player, vehicles, dt);
 }
 
@@ -1712,11 +1724,13 @@ bool InstallRuntime() noexcept {
     InstallEncounterPowerBoost();
     InstallEncounterMinimapHook();
     InstallEncounterPathHook();
+    InstallCustomDriveHook();
+    InstallCustomSpeedHook();
     InstallEncounterSignalHooks();
     Log(LogLevel::Info,
-        "Runtime installed mode=alpha.50-spawn-eligibility max=%u populationRadius=%.1fm markerRadius=%.1fm managementMaxHz=20 nativeAIUnthrottled=1 failurePolicy=retry-with-bounded-backoff cacheWantRetention=1 managedKillRetention=0 managedDeactivateRetention=0 destructorRetention=0 battleRouteAdapterMaxHz=1 passTransitionImmediate=1 directSteeringWrites=0 borrowedAnchorRoadAcrossAllocation=0",
+        "Runtime installed mode=alpha.57-career-rewards-optional-weapons max=%u populationRadius=%.1fm markerRadius=%.1fm managementMaxHz=20 nativeAIUnthrottled=1 failurePolicy=retry-with-bounded-backoff cacheWantRetention=1 managedKillRetention=0 managedDeactivateRetention=0 destructorRetention=0 battleRouteAdapterStableHz=1 customManagementHz=4 customDriveHook=%u customSpeedHook=%u passTransitionImmediate=1 directSteeringWrites=0 borrowedAnchorRoadAcrossAllocation=0",
         static_cast<unsigned int>(g_settings.maximumRacers),
-        g_settings.populationRadiusMeters, g_settings.markerRadiusMeters);
+        g_settings.populationRadiusMeters, g_settings.markerRadiusMeters,unsigned(g_customDriveInstalled),unsigned(g_customSpeedInstalled));
     return true;
 }
 
@@ -1726,3 +1740,8 @@ void StopEncounterVoiceForProcessExit() noexcept {
 }
 
 }  // namespace native_freeroam
+
+#pragma comment(linker,"/EXPORT:NFR_PlayerSpikeHitV1=_NFR_PlayerSpikeHitV1")
+extern "C" __declspec(dllexport) void __cdecl NFR_PlayerSpikeHitV1(std::uintptr_t vehicle,std::uintptr_t simable) noexcept {
+    native_freeroam::EncounterSpikeHit(vehicle,simable);
+}

@@ -1,6 +1,18 @@
 # Validation / 検証範囲
 
-## alpha.50
+## alpha.57 (current)
+
+- The distributed ASI is the exact installed binary accepted by the user after the Japanese text hotfix: SHA-256 `DB9B94D5A830A923F00B8568AF5A3D55C23512D99695502354A33579CF3859C7`.
+- Runtime acceptance is the user's report of no noticeable issues on the development installation. No new gameplay run is implied by release preparation.
+- Public source builds as Release Win32. The offline harness passes 1,338 checks with 0 failures; one optional owned-audio check is skipped. Source/compiled behavior and native-ABI fixtures are tested, not every gameplay situation.
+- The icon remains unchanged: SHA-256 `CA929293186A10867B65729CE78AF89C5F5DE880239A402EC68E35E0169D32D1`.
+- INI values match the accepted installed configuration. `Language = ja` and `[BackgroundPolice] Enabled = 1` explicitly expose already-active defaults. Bilingual comments and layout were reorganized; the game installation is not changed by packaging.
+- No Arms Assist source or build is distributed. New bridge-dependent behavior was developed with a private compatible build and must not be presented as available with all public installations. Unsupported/missing weapon integration leaves normal encounters available.
+- The exact executable guard is unchanged. Other game/car/mod configurations, long-duration resource limits and all unusual obstacle cases remain unverified.
+
+配布物は日本語文面修正後にユーザーが「目立った不具合無し」と確認したASIそのものです。公開ソースのビルド・1,338件のオフライン試験と、実ゲームのユーザー確認は区別します。Arms Assistのソース・ビルドは非同梱・非公開で、新連携は対応版の公開待ちです。INIでは省略されていた日本語と背景警察ONを明示しただけで、既存値は維持しています。
+
+## alpha.50 (previous release / 過去の記録)
 
 - The shipped ASI is the accepted gameplay binary, not a new gameplay revision: 241,152 bytes; SHA-256 `24BB75458CE931805CB9EEBFF33722D2F8BCBE6D1171C1FCBA7B762809055767`.
 - Challenge icon TPK SHA-256: `CA929293186A10867B65729CE78AF89C5F5DE880239A402EC68E35E0169D32D1`.

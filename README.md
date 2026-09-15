@@ -16,18 +16,20 @@ Roaming AI racers and one-on-one encounter battles for **Need for Speed Most Wan
 - Independent roaming racers; default 6, configurable 1–15. Current distribution defaults: population radius 600 m, minimap radius 200 m.
 - Price/performance-based vehicle selection, career-limited upgrades and random appearance. Up to 5 model types including the player's model; 4 free-roam engine-audio slots.
 - Automatic vehicle metadata calibration, persisted until related game data changes.
-- Follow a racer and use the game's configured Join Event action. The leader chooses the route; a 300 m gap decides the battle; victory awards 1,000 cash.
+- Follow a racer and use the game's configured Join Event action. The leader chooses the route; a 300 m gap decides the battle. Stable AI pays 1,000 cash; Custom AI pays 300–3,000 by career Blacklist rank.
+- Switch between Stable and Custom AI in the INI. Custom AI follows the player's recorded direction and attacks to overtake within 15 m; it is the shipping default.
 - Lead gauge, challenge notification, trailing-player GPS, optional 2D encounter voices and background police detection.
 
 - 独立走行AIは既定6台、1～15台に設定可能。現在の既定値は生成範囲600 m、マーカー表示200 mです。
 - 価格・性能の近い車種を選び、キャリア進行に従った性能チューンとランダム外見を適用。自車を含む最大5車種、フリーローム用エンジン音4枠。
 - 車両情報を自動構築・保存し、関連ゲームデータが変わるまで再利用。
-- 追走中にゲーム内の「イベント参加」で開始。先頭車がルートを選び、300 m差で決着、勝利報酬は1,000キャッシュ。
+- 追走中にゲーム内の「イベント参加」で開始。先頭車がルートを選び、300 m差で決着。報酬はStable AIで1,000固定、Custom AIでBLに応じて300～3,000。
+- INIでStableとCustom AIを切替。Custom AIはプレイヤーの軌跡方向を追走し、15m以内で追い抜きへ移行します。配布既定値はCustom AIです。
 - リードゲージ、開始通知、後追い時のGPS、任意の2D音声、背景での警察追跡。
 
 ## Compatibility / 対応範囲
 
-**alpha.50**, Windows, ASI loader, compatible Visual C++ x86 runtime. Exact target: NFSPatcher English 1.3 + LAA `speed.exe`, 6,029,312 bytes, SHA-256:
+**alpha.57**, Windows, ASI loader, compatible Visual C++ x86 runtime. Exact target: NFSPatcher English 1.3 + LAA `speed.exe`, 6,029,312 bytes, SHA-256:
 
 ```text
 B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06
@@ -42,6 +44,10 @@ Game files, ASI loader, car assets, saves, generated caches and extracted audio 
 ゲーム本体・ローダー・車両素材・セーブ・生成キャッシュ・抽出音声は同梱しません。任意の音声は所有するUG2から抽出してください。日本語版の抽出を確認済み、他言語版は構造対応のみで全抽出経路は未検証です。
 
 ## Source use / ソース利用条件
+
+See [alpha.57 patch notes](PATCH_NOTES_alpha57.md). Arms Assist is not included or published by this release. Its new bridge-dependent features await a compatible Arms Assist build; this mod works without it. See the guides for the optional weapon rules and compatibility limits.
+
+[alpha.57パッチノート](PATCH_NOTES_alpha57.md)を参照してください。Arms Assistのソース・ビルドは今回公開しません。新連携が必要な機能は対応ビルドの公開待ちで、本MOD単体での利用には不要です。任意の武器連携と制限は説明書に記載しています。
 
 Research, exchange of ideas and personal use (including local modifications/builds) are permitted. Redistribution and distribution of modified builds require prior express permission. See [LICENSE.md](LICENSE.md); third-party licenses and previously granted rights are preserved.
 

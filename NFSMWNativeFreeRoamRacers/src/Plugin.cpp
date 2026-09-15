@@ -9,7 +9,7 @@ DWORD WINAPI InitializePlugin(void*) noexcept {
     Sleep(500);
     native_freeroam::Log(
         native_freeroam::LogLevel::Info,
-        "NFSMW Native Free Roam Racers 0.1.0-alpha.50 spawn-eligibility initializing");
+        "NFSMW Native Free Roam Racers 0.1.0-alpha.57 career-rewards-optional-weapons initializing");
     if (!native_freeroam::VerifyHostExecutable()) return 0;
     if (!native_freeroam::InstallRuntime()) {
         native_freeroam::Log(native_freeroam::LogLevel::Error,

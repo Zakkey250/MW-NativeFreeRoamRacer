@@ -4,6 +4,8 @@ struct EncounterRuntime {
     battle::Identity player{},rival{};
     bool pending=false, aiChanged=false, rewardAttempted=false, leadRoutePending=false;
     int actor=-1;
+    unsigned reward=1000,blacklist=0;
+    bool weaponForfeit=false;
     float routeSeconds=0,logSeconds=0,missingSeconds=0,retryLogSeconds=0;
     Vec3 lastDestination{};
     battle::Point lastDestinationHeading{};
@@ -12,6 +14,13 @@ struct EncounterRuntime {
     float routeProgress=0,routeEndpointDistance=0;
     bool destinationSet=false;
     encounter_route::Trail routeTrail;
+    encounter_custom::DirectionalTrail customTrail;
+    bool customWaiting=false;
+    bool customDirect=false;
+    ULONGLONG customHintAt=0;
+    float customSpeedDemand=-1;
+    float customLastSpeedRequest=-1,customAttackEntrySpeed=-1,customAttackSeconds=0;
+    bool customAttackPace=false;
     encounter_route::Pursuit pursuit;
     bool passActive=false;
     encounter_route::Trail::Destination routeHint{};
@@ -27,6 +36,8 @@ bool g_battleSurface=false;
 static_assert(offsetof(NFSPluginSDK::MW05::cFrontEndDatabase,CurrentUserProfiles)==0x10);
 static_assert(offsetof(NFSPluginSDK::MW05::UserProfile,mTheCareerSettings)+
     offsetof(NFSPluginSDK::MW05::CareerSettings,CurrentCash)==0xB4);
+static_assert(offsetof(NFSPluginSDK::MW05::UserProfile,mTheCareerSettings)+
+    offsetof(NFSPluginSDK::MW05::CareerSettings,CurrentBin)==0xB0);
 bool ValidateEncounterBattleSurface() noexcept {
     struct Guard {std::uintptr_t va; const char* bytes; unsigned size;};
     const Guard guards[]={
@@ -104,6 +115,8 @@ bool ReadEncounterAI(const battle::Identity& identity,EncounterNativeAI& out,boo
 #include "EncounterRaceSkill.inl"
 #include "EncounterPowerBoost.inl"
 #include "EncounterMinimap.inl"
+#include "EncounterCustomDrive.inl"
+#include "EncounterCustomSpeed.inl"
 #include "EncounterRoute.inl"
 #include "EncounterGuide.inl"
 #include "EncounterCatchupProbe.inl"
@@ -233,6 +246,8 @@ bool NativeEncounterFollow(const VehicleSnapshot& rival,bool force) noexcept {
     }
 }
 
+#include "EncounterCustomFollow.inl"
+
 void* EncounterProfile() noexcept {
     NFSPluginSDK::MW05::cFrontEndDatabase* database=nullptr;
     if(!AudioRead(reinterpret_cast<void*>(Address(0x0091CF90)),&database)||!database) return nullptr;
@@ -248,10 +263,11 @@ bool AwardEncounterCash() noexcept {
     auto* profile=static_cast<NFSPluginSDK::MW05::UserProfile*>(g_battle.profile);
     auto* cash=&profile->mTheCareerSettings.CurrentCash;
     std::int32_t before=0;
-    if(!AudioRead(cash,&before)||before<0||before>INT32_MAX-1000) return false;
-    __try { *cash=before+1000; }
+    const auto amount=g_battle.reward;
+    if(amount<300||amount>3000||amount%100||!AudioRead(cash,&before)||before<0||before>INT32_MAX-int(amount)) return false;
+    __try { *cash=before+int(amount); }
     __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
-    Log(LogLevel::Info,"ENCOUNTER_REWARD amount=1000 before=%d after=%d profile=%p diskSaveForced=0",before,*cash,profile);
+    Log(LogLevel::Info,"ENCOUNTER_REWARD amount=%u BL=%u before=%d after=%d profile=%p diskSaveForced=0",amount,g_battle.blacklist,before,*cash,profile);
     return true;
 }
 
@@ -275,6 +291,8 @@ void EndEncounterBattle(bool restore,bool cancelVoice) noexcept {
     }
     if(cancelVoice) QueueEncounterVoice(-1,0);
     g_gaugeVisible=false;g_battle={};g_encounterCandidate={};
+    g_customDriveCalls=0;g_customRoadQueries=0;g_customSpeedCalls=0;g_customSpeedStops=0;
+    g_customNativeSpeed=g_customAppliedSpeed=-1;
     g_encounterCooldownUntil=GetTickCount64()+8000;
 }
 
@@ -289,7 +307,12 @@ void EncounterMissingSample(float dt) noexcept {
     ClearEncounterPowerBoost();
     StopEncounterGuide(false);
     if(!EncounterBattleBusy()) return;
-    if(g_battle.missingSeconds==0) Log(LogLevel::Info,"ENCOUNTER_HOLD reason=missing-sample noResult=1");
+    if(g_battle.missingSeconds==0) {
+        Log(LogLevel::Info,"ENCOUNTER_HOLD reason=missing-sample noResult=1");
+        if(g_settings.encounterAIMode==encounter_custom::Mode::Custom) {
+            g_battle.customTrail.Reset();g_battle.routeHint={};g_battle.destinationSet=false;
+        }
+    }
     g_battle.missingSeconds+=dt;g_gaugeVisible=false;
     // True vehicle destruction is distinct from a stopped or crashed live car.
     // Never read the cached vehicle in this branch.
@@ -302,6 +325,13 @@ void EncounterMissingSample(float dt) noexcept {
 void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::vector<VehicleSnapshot>& vehicles,float dt) noexcept {
     if(g_encounterEnabled&&g_battleSurface) EnsureEncounterGauge();
     if(!EncounterBattleBusy()) return;
+    if(g_battle.weaponForfeit&&g_battle.model.phase()==battle::Phase::Active) {
+        g_battle.model.Forfeit();
+        ShowEncounterMessage(g_encounterHud,encounter_text::Id::Forfeit);
+        QueueEncounterVoice(g_battle.actor,2);
+        Log(LogLevel::Info,"ENCOUNTER_FINISH won=0 reward=0 reason=weapon-forfeit");
+        EndEncounterBattle(true,false);return;
+    }
     const auto found=std::find_if(vehicles.begin(),vehicles.end(),[](const auto& v) {
         return reinterpret_cast<std::uintptr_t>(v.pointer)==g_battle.rival.vehicle && v.vehicleKey==g_battle.rival.key;
     });
@@ -325,8 +355,12 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
     }
     if(g_battle.pending) {
         g_battle.pending=false;
-        if(g_battle.model.Start(sample).event!=battle::Event::Started) {EndEncounterBattle(false,true);return;}
         g_battle.profile=EncounterProfile();g_battle.aiChanged=true;
+        unsigned char bin=0;
+        if(g_battle.profile)AudioRead(&static_cast<NFSPluginSDK::MW05::UserProfile*>(g_battle.profile)->mTheCareerSettings.CurrentBin,&bin);
+        g_battle.blacklist=bin;
+        g_battle.reward=encounter_reward::Amount(g_settings.encounterAIMode==encounter_custom::Mode::Custom,bin);
+        if(g_battle.model.Start(sample,g_battle.reward).event!=battle::Event::Started) {EndEncounterBattle(false,true);return;}
         if(!NativeEncounterStart(g_battle.rival)) {
             Log(LogLevel::Warning,"ENCOUNTER_CANCEL reason=native-start-rejected");
             EndEncounterBattle(true,true);return;
@@ -343,9 +377,9 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
             g_battle.actor=owner->encounterActor;
         }
         QueueEncounterVoice(g_battle.actor,0);
-        if(EncounterHudAvailable(g_encounterHud)) ShowEncounterMessage(g_encounterHud,encounter_text::Id::Start);
-        Log(LogLevel::Info,"ENCOUNTER_START rival=%p speaker=%02d leader=rival separation=300 reward=1000 nativeRaceStatusWrites=0",
-            rival->pointer,g_battle.actor);
+        ShowEncounterMessage(g_encounterHud,encounter_text::Id::Start);
+        Log(LogLevel::Info,"ENCOUNTER_START rival=%p speaker=%02d leader=rival separation=300 reward=%u BL=%u nativeRaceStatusWrites=0",
+            rival->pointer,g_battle.actor,g_battle.reward,g_battle.blacklist);
     } else {
         const auto change=g_battle.model.Step(sample,dt);
         if(change.event==battle::Event::Cancelled) {
@@ -356,17 +390,20 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
             const bool playerLeads=g_battle.model.leader()==battle::Leader::Player;
             g_battle.destinationSet=false;g_battle.routeSeconds=1;
             g_battle.routeTrail.Reset();g_battle.routeHint={};g_battle.routeAge=0;
+            g_battle.customTrail.Reset();g_battle.customWaiting=false;g_battle.customDirect=false;g_battle.customHintAt=0;
+            g_battle.customSpeedDemand=g_battle.customLastSpeedRequest=g_battle.customAttackEntrySpeed=-1;
+            g_battle.customAttackPace=false;g_battle.customAttackSeconds=0;
             g_battle.pursuit.Reset();g_battle.passActive=false;
             g_battle.leadRoutePending=!playerLeads;
-            if(EncounterHudAvailable(g_encounterHud)) ShowEncounterMessage(g_encounterHud,playerLeads?encounter_text::Id::Lead:encounter_text::Id::Passed);
+            ShowEncounterMessage(g_encounterHud,playerLeads?encounter_text::Id::Lead:encounter_text::Id::Passed);
             Log(LogLevel::Info,"ENCOUNTER_LEAD leader=%s gap=%.1f",playerLeads?"player":"rival",g_battle.model.gap());
         }
         if(change.event==battle::Event::Won||change.event==battle::Event::Lost) {
             const bool won=change.event==battle::Event::Won;
-            const bool paid=won&&change.cashIntent==1000&&AwardEncounterCash();
-            if(EncounterHudAvailable(g_encounterHud)) ShowEncounterMessage(g_encounterHud,won?(paid?encounter_text::Id::Victory:encounter_text::Id::PaymentFailed):encounter_text::Id::Defeat);
+            const bool paid=won&&change.cashIntent==g_battle.reward&&AwardEncounterCash();
+            ShowEncounterMessage(g_encounterHud,won?(paid?encounter_text::Id::Victory:encounter_text::Id::PaymentFailed):encounter_text::Id::Defeat,g_battle.reward);
             QueueEncounterVoice(g_battle.actor,won?1:2);
-            Log(LogLevel::Info,"ENCOUNTER_FINISH won=%u reward=%u gap=%.1f speaker=%02d",unsigned(won),paid?1000u:0u,g_battle.model.gap(),g_battle.actor);
+            Log(LogLevel::Info,"ENCOUNTER_FINISH won=%u reward=%u gap=%.1f speaker=%02d",unsigned(won),paid?g_battle.reward:0u,g_battle.model.gap(),g_battle.actor);
             EndEncounterBattle(true,false);return;
         }
     }
@@ -376,7 +413,34 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
         g_battle.routeHint=g_battle.pursuit.Update({player.position.x,player.position.y,player.position.z},
             {player.heading.x,player.heading.y,player.heading.z},
             {rival->position.x,rival->position.y,rival->position.z},
-            {rival->heading.x,rival->heading.y,rival->heading.z},dt);
+            {rival->heading.x,rival->heading.y,rival->heading.z},dt,g_settings.encounterAIMode==encounter_custom::Mode::Custom);
+        if(g_settings.encounterAIMode==encounter_custom::Mode::Custom) {
+            const bool recorded=g_battle.customTrail.Record(
+                {player.position.x,player.position.y,player.position.z},
+                {player.heading.x,player.heading.y,player.heading.z});
+            if(!recorded) g_battle.destinationSet=false;
+            // Continue recording during attack; never replace the trajectory
+            // with the current-player chase endpoint when attack expires.
+            const auto trailHint=g_battle.customTrail.Select({rival->position.x,rival->position.y,rival->position.z},
+                rival->speed,{rival->heading.x,rival->heading.y,rival->heading.z});
+            g_battle.routeHint=g_battle.pursuit.passing()?encounter_custom::Destination{}:trailHint;
+            g_battle.customHintAt=GetTickCount64();
+            const bool attack=g_battle.pursuit.passing();
+            if(attack&&!g_battle.customAttackPace) {
+                g_battle.customAttackSeconds=0;
+                g_battle.customAttackEntrySpeed=std::max(std::abs(rival->speed),
+                    std::max(g_battle.customSpeedDemand,g_battle.customLastSpeedRequest));
+            }
+            const auto paceDirection=attack?battle::UnitXZ({player.heading.x,player.heading.y,player.heading.z}):trailHint.heading;
+            g_battle.customSpeedDemand=(attack||trailHint.valid)?encounter_custom::ChaseSpeed(player.speed,g_battle.model.gap(),
+                battle::DotXZ(battle::UnitXZ({rival->heading.x,rival->heading.y,rival->heading.z}),paceDirection),attack):-1;
+            if(attack) {
+                g_battle.customSpeedDemand=encounter_custom::AttackEntrySpeed(g_battle.customSpeedDemand,
+                    g_battle.customAttackEntrySpeed,g_battle.customAttackSeconds);
+                g_battle.customAttackSeconds+=std::isfinite(dt)?std::clamp(dt,0.f,.25f):0.f;
+            }
+            g_battle.customAttackPace=attack;
+        }
         // Sample the 5m window at management frequency, not at the 1Hz replan
         // rate. Only the phase edge bypasses the normal request timer.
         if(g_battle.pursuit.passing()!=g_battle.passActive) g_battle.routeSeconds=1;
@@ -387,10 +451,13 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
     g_battle.routeProgress=Distance(g_battle.routeOrigin,rival->position);
     g_battle.routeEndpointDistance=Distance(g_battle.lastDestination,rival->position);
     g_battle.routeSeconds+=dt;
-    if(g_battle.routeSeconds>=1) {
+    const bool customFollow=g_settings.encounterAIMode==encounter_custom::Mode::Custom&&
+        g_battle.model.leader()==battle::Leader::Player;
+    if(g_battle.routeSeconds>=(customFollow?.25f:1.f)) {
         g_battle.routeSeconds=0;
         bool ready=true;
-        if(g_battle.model.leader()==battle::Leader::Player) ready=NativeEncounterFollow(*rival,!g_battle.destinationSet);
+        if(customFollow) ready=NativeEncounterCustomFollow(*rival,!g_battle.destinationSet);
+        else if(g_battle.model.leader()==battle::Leader::Player) ready=NativeEncounterFollow(*rival,!g_battle.destinationSet);
         else if(g_battle.leadRoutePending) {ready=NativeEncounterLead(g_battle.rival);if(ready) g_battle.leadRoutePending=false;}
         // A native Goal may temporarily have no Action while recovering. Route
         // availability is NOT a race-end condition. Retry without replacing AI.
@@ -405,7 +472,19 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
     g_battle.logSeconds+=dt;
     if(g_battle.logSeconds>=1) {
         LogEncounterPowerBoost();
+        if(g_settings.encounterAIMode==encounter_custom::Mode::Custom)
+            Log(LogLevel::Info,"ENCOUNTER_CUSTOM phase=%s points=%u cursor=%llu target=%llu valid=%u blocked=%u direct=%u driveCalls=%u roadQueriesBlocked=%u",
+                g_battle.model.leader()!=battle::Leader::Player?"leader":(g_battle.pursuit.passing()?"attack":"trail"),
+                unsigned(g_battle.customTrail.size()),g_battle.customTrail.cursor(),g_battle.customTrail.target(),
+                unsigned(g_battle.routeHint.valid),unsigned(g_battle.customTrail.blocked()),unsigned(g_battle.customDirect),
+                g_customDriveCalls.exchange(0),g_customRoadQueries.exchange(0));
         LogEncounterCatchup();
+        if(g_settings.encounterAIMode==encounter_custom::Mode::Custom) {
+            const unsigned calls=g_customSpeedCalls.exchange(0),stops=g_customSpeedStops.exchange(0);
+            Log(LogLevel::Info,"ENCOUNTER_CUSTOM_SPEED raisedCalls=%u nativeStopCalls=%u nativeKmh=%.1f appliedKmh=%.1f demandKmh=%.1f",
+                calls,stops,g_customNativeSpeed*3.6f,g_customAppliedSpeed*3.6f,g_battle.customSpeedDemand*3.6f);
+            g_customNativeSpeed=g_customAppliedSpeed=-1;
+        }
         g_battle.logSeconds=0;
         Log(LogLevel::Info,"ENCOUNTER_TICK leader=%s gap=%.1f playerSpeed=%.1f rivalSpeed=%.1f signedProgress=%.2f progressValid=%u roleTrusted=%u playerXYZ=%.2f/%.2f/%.2f rivalXYZ=%.2f/%.2f/%.2f playerHeading=%.3f/%.3f/%.3f rivalHeading=%.3f/%.3f/%.3f raceSkillCalls=%u",
             g_gaugeLead?"player":"rival",g_battle.model.gap(),player.speed*3.6f,rival->speed*3.6f,

@@ -8,7 +8,9 @@ std::atomic<ULONGLONG> g_encounterPowerRefresh{0};
 std::atomic<unsigned> g_encounterPowerCalls{0};
 bool g_encounterPowerInstalled=false;
 float EncounterPowerTier(bool active,bool playerLeads,float gap) noexcept {
-    if(!active||!playerLeads||!std::isfinite(gap)||gap<0||gap>300) return 1;
+    if(!active||!std::isfinite(gap)||gap<0||gap>300) return 1;
+    if(!playerLeads) return g_settings.encounterAIMode==encounter_custom::Mode::Custom?
+        g_settings.customAILeaderPowerScale:1;
     return g_settings.encounterPowerScales[gap<=100?0:(gap<=200?1:2)];
 }
 float ScaleEncounterPowerTerm(float native,float scale) noexcept {
