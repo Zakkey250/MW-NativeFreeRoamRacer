@@ -10,6 +10,7 @@ Roaming AI racers and one-on-one encounter battles for **Need for Speed Most Wan
 - [日本語説明書](NFSMWNativeFreeRoamRacers/docs/GUIDE_JA.md) / [English guide](NFSMWNativeFreeRoamRacers/docs/GUIDE_EN.md)
 - [Audio extractor / 音声抽出アプリ](NFSU2EncounterAudioExtractor/README.md)
 - [Build / ビルド](BUILD.md) / [Validation and limits / 検証範囲](VALIDATION.md)
+- [Development blog (Japanese) / 開発ブログ：Native Free Roam Racerができるまで](NFSMWNativeFreeRoamRacers/docs/development/STORY_JA.md)
 
 ## Features / 機能
 
