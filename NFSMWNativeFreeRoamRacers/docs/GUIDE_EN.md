@@ -2,7 +2,7 @@
 
 Adds roaming AI racers and one-on-one encounter battles to Need for Speed Most Wanted (2005).
 
-**alpha.57 is an alpha distribution, gameplay-validated on the development installation. Other car/mod combinations remain unverified.**
+**alpha.59 is an alpha distribution. Cruising/speed matching received user gameplay acceptance in alpha.58; update checks and dialogs were tested separately, not during an actual game launch. Other car/mod combinations remain unverified.**
 
 On first use, remain in the safehouse for about 2 seconds, then enter free roam and allow the initial vehicle scan and spawning to finish. Successful vehicle, price and stock-performance metadata is saved to `scripts/NativeFreeRoamRacers/VehicleCatalog.cache.bin`. Later launches reuse it when related data SHA-256 fingerprints match. Changed vehicle definitions/Unlimiter configuration or invalid caches trigger rebuilding. Modify game data only while the game is closed. Do not redistribute generated caches.
 
@@ -66,7 +66,36 @@ An unavailable/out-of-range career rank uses 300 in Custom mode. Defeats and dis
 
 Optional weapon integration supports verified MWArsenal builds only. During a battle, a successful player EMP or shockwave hit affecting another vehicle (including police) causes disqualification. Mere firing, misses, ordinary contact and harmless Turbo/jammer use do not. No weapon mod is required for ordinary encounters.
 
-**Arms Assist is not included. Its encounter-bridge build is not publicly released with alpha.57.** Spike-hit reporting and racers using EMP against police require that compatible build and remain pending for public users. If an older Arms Assist without the handshake is installed, weapon-hit observation is disabled to avoid hook conflicts; ordinary battles still work. The prepared racer EMP path targets police only, not the player. Unsupported weapon binaries disable integration rather than the core mod. Do not assume every MWArsenal version is compatible.
+Optional integration availability depends on the required interfaces being present and safe to use. Missing or unsupported integration disables only the affected feature; ordinary battles remain available. No external weapon MOD is bundled.
+
+## Cruising speed and challenge speed matching (alpha.58+)
+
+In `scripts/NFSMWNativeFreeRoamRacers.ini`:
+
+```ini
+[Population]
+CruisingSpeedPercent = 60
+[Encounter]
+StartSpeedToleranceKmh = 10
+```
+
+`CruisingSpeedPercent` accepts 1–100. 60 means 60% of the native AI's requested speed, **not** a fixed 60 km/h or an instantaneous physical speed cap. 100 removes the reduction. Both AI modes are supported; the battle opponent and police-pursued racers are exempt. Stops, reverse and native recovery requests are preserved.
+
+`StartSpeedToleranceKmh` accepts 0–100 and requires the absolute speed difference to stay within that value, inclusive. The default is ±10 km/h; 0 requires matching speed. It is checked again on button press and cannot be bypassed by the brief prompt grace period. Follow behind within the existing 1–60 m envelope; the other geometry conditions still apply. No minimum absolute speed is required.
+
+Old INIs without these keys automatically use 60 and 10. Restart after editing.
+
+## Startup update notice (alpha.59+)
+
+```ini
+[Updates]
+Enabled = 1
+Language = auto
+```
+
+Public GitHub release metadata is checked once per launch. A newer version with the proper MOD binary ZIP triggers a Japanese/English confirmation window. There is **no asset download, installer, browser launch or automatic file replacement**. Close the notice to continue; update manually after exiting the game. Offline, HTTP errors, invalid metadata and same/older versions do not interrupt play. No notice is shown after gameplay starts. Alpha builds include newer prereleases in comparison; stable builds only consider stable releases.
+
+`Enabled = 0` prevents both update-check network access and notifications. `Language = auto` follows `[Encounter] Language`; absent that setting, it falls back to game language settings. `ja` selects Japanese; `en`, other languages and unknown values use English. Checks use HTTPS to `api.github.com`, without authentication or sending saves, game paths or hardware IDs. Other participating MODs can serialize their notifications through the shared protocol, without a load-order dependency.
 
 ## Optional encounter voices
 

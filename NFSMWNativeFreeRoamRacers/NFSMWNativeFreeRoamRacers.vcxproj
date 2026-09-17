@@ -48,6 +48,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\Logging.cpp" /><ClCompile Include="src\Plugin.cpp" /><ClCompile Include="src\Runtime.cpp" />
+    <ClCompile Include="src\UpdateNotice.cpp"><AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions></ClCompile>
     <ClCompile Include="third_party\minhook\src\buffer.c" /><ClCompile Include="third_party\minhook\src\hook.c" /><ClCompile Include="third_party\minhook\src\trampoline.c" /><ClCompile Include="third_party\minhook\src\hde\hde32.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

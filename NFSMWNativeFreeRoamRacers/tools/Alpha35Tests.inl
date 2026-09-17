@@ -7,7 +7,7 @@
         VehicleSnapshot player{},rival{};
         player.pointer=&managed;player.driverClass=kDriverHuman;player.heading={0,0,1};player.speed=40;
         rival.pointer=&tuned;rival.driverClass=kDriverRacer;rival.vehicleKey=tuned.key;
-        rival.heading={0,0,1};rival.speed=50;rival.position={0,0,30};
+        rival.heading={0,0,1};rival.speed=40;rival.position={0,0,30}; // Matched speed required since alpha.58.
         std::vector<VehicleSnapshot> vehicles{player,rival};
         ManagedRacer owned{};owned.pointer=&tuned;owned.simable=captured.simable;owned.vehicleKey=0xA39413FC;
         expect(!FindLive(vehicles,owned),"alpha35 reproduces alpha34 stock-key mismatch despite live racer at 30m");

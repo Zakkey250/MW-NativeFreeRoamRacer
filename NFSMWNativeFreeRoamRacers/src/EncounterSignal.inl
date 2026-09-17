@@ -71,12 +71,13 @@ const char* EncounterFollowReason(const VehicleSnapshot& player,
     const auto heading = HorizontalHeadingDot(player.heading, rival.heading);
     if (!std::isfinite(heading) || heading <= 0.0f) return "oncoming-or-invalid-heading";
     if (player.speed < 0 || rival.speed < 0) return "invalid-speed";
+    // Hard gate, including grace and the fresh button-press sample.
+    if (!roaming_pace::SpeedMatched(player.speed,rival.speed,g_settings.startSpeedToleranceKmh)) return "speed-delta-over-tolerance";
     if (holding) return nullptr;
     if (heading < eligibility::headingDotMinimum) return "heading-dot-under-0.25";
     // No minimum speed: braking, a brief stop, or an EMP recovery must not make
     // the input window vanish. Only reverse-facing geometry remains excluded.
-    // Speed delta is diagnostic only. Matching a fast roaming racer is not
-    // required once the player is within the rear engagement envelope.
+    // Matching two stopped vehicles is allowed; no absolute minimum speed.
     return nullptr;
 }
 
@@ -460,6 +461,6 @@ void InstallEncounterSignalHooks() noexcept {
         }
     }
     g_encounterEnabled = success;
-    Log(LogLevel::Info, "ENCOUNTER installed=%u phase=battle-prototype distance=1-60m lateralMax=20m heightMax=slope-scaled-5-12m headingDotMin=0.25 speedMin=none deltaMax=unlimited dwell=0.15s followGraceMs=2000 hardRangeGrace=0 cooldown=8s mappedAction=46 physicalKeyPolling=0 nativeEventWrites=0",
+    Log(LogLevel::Info, "ENCOUNTER installed=%u phase=battle-prototype distance=1-60m lateralMax=20m heightMax=slope-scaled-5-12m headingDotMin=0.25 speedMin=none deltaMax=configured hardSpeedGrace=0 dwell=0.15s followGraceMs=2000 hardRangeGrace=0 cooldown=8s mappedAction=46 physicalKeyPolling=0 nativeEventWrites=0",
         unsigned(success));
 }

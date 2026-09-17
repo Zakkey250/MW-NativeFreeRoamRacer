@@ -6,4 +6,6 @@
 
 These components retain their respective licenses; the repository's custom terms do not override them. The challenge icon is original to this project. Game UI code/assets are not bundled. No game audio, vehicle assets, game executable or ASI loader is included.
 
+- nlohmann/json 3.11.3 — Niels Lohmann and contributors, MIT. See `Licenses/nlohmann-json-LICENSE.MIT` in the binary ZIP or `third_party/nlohmann/LICENSE.MIT` in source. Used for update metadata; original license retained.
+
 各コンポーネントの元ライセンスは維持され、独自の利用条件で上書きしません。開始通知アイコンは本プロジェクト独自のものです。ゲームUI・音声・車両素材・ゲームEXE・ASIローダーは同梱しません。

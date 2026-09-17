@@ -10,6 +10,7 @@
 #include "EncounterCustomAI.h"
 #include "EncounterDirectionalTrail.h"
 #include "EncounterChaseSpeed.h"
+#include "RoamingPace.h"
 #include <NFSPluginSDK/Game.MW05/Types/WRoadNav.h>
 #include "EncounterText.h"
 #include "EncounterReward.h"
@@ -25,6 +26,7 @@
 
 #include <NFSPluginSDK/Game.MW05/Types/AIGoal.h>
 #include <NFSPluginSDK/Game.MW05/Types/VehicleBehavior.h>
+#include <NFSPluginSDK/Game.MW05/Types/AIVehicle.h>
 #include <NFSPluginSDK/Game.MW05/Types/GIcon.h>
 #include <NFSPluginSDK/Game.MW05/Types/GManager.h>
 #include <NFSPluginSDK/Game.MW05/Types/GRaceStatus.h>
@@ -170,6 +172,8 @@ struct Settings {
     std::array<float,3> encounterPowerScales{1.50f,1.75f,2.00f};
     encounter_custom::Mode encounterAIMode=encounter_custom::Mode::Stable;
     float customAILeaderPowerScale=1.25f;
+    float cruisingSpeedPercent=60.0f;
+    float startSpeedToleranceKmh=10.0f;
     unsigned freeRoamAudioSlots = 4;
     std::size_t vehicleVariety = 5;
     bool randomAppearance = true;
@@ -358,6 +362,13 @@ void LoadSettings() noexcept {
     GetPrivateProfileStringW(L"Encounter", L"Language", L"ja", encounterLanguage,16,modulePath);
     g_settings.encounterEnglish = _wcsicmp(encounterLanguage,L"en")==0;
     LoadEncounterPowerSettings(modulePath);
+    wchar_t cruiseText[128]{},toleranceText[128]{};
+    const auto cruiseCount=GetPrivateProfileStringW(L"Population",L"CruisingSpeedPercent",L"60",cruiseText,128,modulePath);
+    const auto toleranceCount=GetPrivateProfileStringW(L"Encounter",L"StartSpeedToleranceKmh",L"10",toleranceText,128,modulePath);
+    g_settings.cruisingSpeedPercent=cruiseCount>=127?60.f:roaming_pace::Parse(cruiseText,60,1,100);
+    g_settings.startSpeedToleranceKmh=toleranceCount>=127?10.f:roaming_pace::Parse(toleranceText,10,0,100);
+    Log(LogLevel::Info,"ROAMING_PACE config cruisePercent=%.1f startSpeedToleranceKmh=%.1f restartRequired=1",
+        g_settings.cruisingSpeedPercent,g_settings.startSpeedToleranceKmh);
     g_settings.backgroundPoliceEnabled = GetPrivateProfileIntW(L"BackgroundPolice", L"Enabled", 1, modulePath) != 0;
     g_settings.freeRoamAudioSlots = static_cast<unsigned>(std::clamp(
         static_cast<int>(GetPrivateProfileIntW(L"Audio", L"FreeRoamSlots", 4, modulePath)), 0, 4));
@@ -1602,6 +1613,12 @@ bool ValidateSurface(std::string* error) noexcept {
 
 }  // namespace
 
+bool StartupNoticeAllowed() noexcept {
+    unsigned flow=0;
+    // Never interrupt a race/free roam (flow 6), or invent UI on an unreadable host.
+    return SafeRead(reinterpret_cast<void*>(Address(kGameFlowState)),&flow)&&flow<6;
+}
+
 bool VerifyHostExecutable() noexcept {
     wchar_t executablePath[MAX_PATH]{};
     if (GetModuleFileNameW(nullptr, executablePath, MAX_PATH) == 0) {
@@ -1728,7 +1745,7 @@ bool InstallRuntime() noexcept {
     InstallCustomSpeedHook();
     InstallEncounterSignalHooks();
     Log(LogLevel::Info,
-        "Runtime installed mode=alpha.57-career-rewards-optional-weapons max=%u populationRadius=%.1fm markerRadius=%.1fm managementMaxHz=20 nativeAIUnthrottled=1 failurePolicy=retry-with-bounded-backoff cacheWantRetention=1 managedKillRetention=0 managedDeactivateRetention=0 destructorRetention=0 battleRouteAdapterStableHz=1 customManagementHz=4 customDriveHook=%u customSpeedHook=%u passTransitionImmediate=1 directSteeringWrites=0 borrowedAnchorRoadAcrossAllocation=0",
+        "Runtime installed mode=alpha.59-startup-update-notice max=%u populationRadius=%.1fm markerRadius=%.1fm managementMaxHz=20 nativeAITickUnthrottled=1 failurePolicy=retry-with-bounded-backoff cacheWantRetention=1 managedKillRetention=0 managedDeactivateRetention=0 destructorRetention=0 battleRouteAdapterStableHz=1 customManagementHz=4 customDriveHook=%u customSpeedHook=%u passTransitionImmediate=1 directSteeringWrites=0 borrowedAnchorRoadAcrossAllocation=0",
         static_cast<unsigned int>(g_settings.maximumRacers),
         g_settings.populationRadiusMeters, g_settings.markerRadiusMeters,unsigned(g_customDriveInstalled),unsigned(g_customSpeedInstalled));
     return true;

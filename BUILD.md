@@ -11,6 +11,7 @@ Install Visual Studio 2022 C++ build tools (v143) with a Windows SDK. From the r
 ```powershell
 & ./NFSMWNativeFreeRoamRacers/tools/Build.ps1
 & ./NFSMWNativeFreeRoamRacers/tools/Test-CacheOwnership.ps1
+& ./NFSMWNativeFreeRoamRacers/tools/Test-UpdateNotice.ps1
 ```
 
 The project uses `Release|Win32` (the solution maps `Release|x86`). Output: `NFSMWNativeFreeRoamRacers/artifacts/Release/NFSMWNativeFreeRoamRacers.asi`. Vendored MinHook and NFSPluginSDK are included. The offline harness does not require the game. Building successfully is not gameplay validation. Debug paths/toolchain changes can change the resulting binary hash.
@@ -23,6 +24,12 @@ The original challenge icon is generated without game assets. Python with Pillow
 python ./NFSMWNativeFreeRoamRacers/tools/Build-EncounterIcon.py
 python ./NFSMWNativeFreeRoamRacers/tools/Test-EncounterIcon.py
 ```
+
+## Update notice / 更新通知
+
+The updater additionally uses the vendored MIT-licensed nlohmann/json header and the Windows WinHTTP library. `Test-UpdateNotice.ps1` runs offline policy/queue tests by default; optional `-Live` accesses GitHub metadata, and `-Dialog` briefly displays auto-closing Japanese/English test windows. Neither option starts or operates the game. Preserve the per-file `/utf-8` option for `UpdateNotice.cpp`.
+
+更新通知は同梱のnlohmann/json（MIT）とWindows標準WinHTTPを使用します。通知テストの`-Live`はGitHub実通信、`-Dialog`は自動で閉じる日英テスト画面を表示します。通常はオフライン試験のみで、ゲームは起動しません。
 
 ## Audio extractor / 音声抽出アプリ
 

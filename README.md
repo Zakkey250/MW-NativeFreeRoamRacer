@@ -29,7 +29,7 @@ Roaming AI racers and one-on-one encounter battles for **Need for Speed Most Wan
 
 ## Compatibility / 対応範囲
 
-**alpha.57**, Windows, ASI loader, compatible Visual C++ x86 runtime. Exact target: NFSPatcher English 1.3 + LAA `speed.exe`, 6,029,312 bytes, SHA-256:
+**alpha.59**, Windows, ASI loader, compatible Visual C++ x86 runtime. Exact target: NFSPatcher English 1.3 + LAA `speed.exe`, 6,029,312 bytes, SHA-256:
 
 ```text
 B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06
@@ -43,11 +43,13 @@ Game files, ASI loader, car assets, saves, generated caches and extracted audio 
 
 ゲーム本体・ローダー・車両素材・セーブ・生成キャッシュ・抽出音声は同梱しません。任意の音声は所有するUG2から抽出してください。日本語版の抽出を確認済み、他言語版は構造対応のみで全抽出経路は未検証です。
 
+## Latest changes / 最新の変更
+
+See [alpha.59 patch notes](PATCH_NOTES_alpha59.md). Normal cruising now defaults to 60% of the native AI target speed, and challenges require a speed difference within ±10 km/h; both are configurable. Startup update notices check public GitHub metadata only, with no download or installation feature. Optional integrations remain optional and are not required to play.
+
+[alpha.59パッチノート](PATCH_NOTES_alpha59.md)を参照してください。通常巡航の目標速度は既定60％、開始時の速度差は既定±10km/h以内となり、いずれもINIで調整できます。起動時の更新通知はGitHubの公開情報のみ確認し、DL・自動導入は行いません。任意連携はゲームプレイの必須要件ではありません。
+
 ## Source use / ソース利用条件
-
-See [alpha.57 patch notes](PATCH_NOTES_alpha57.md). Arms Assist is not included or published by this release. Its new bridge-dependent features await a compatible Arms Assist build; this mod works without it. See the guides for the optional weapon rules and compatibility limits.
-
-[alpha.57パッチノート](PATCH_NOTES_alpha57.md)を参照してください。Arms Assistのソース・ビルドは今回公開しません。新連携が必要な機能は対応ビルドの公開待ちで、本MOD単体での利用には不要です。任意の武器連携と制限は説明書に記載しています。
 
 Research, exchange of ideas and personal use (including local modifications/builds) are permitted. Redistribution and distribution of modified builds require prior express permission. See [LICENSE.md](LICENSE.md); third-party licenses and previously granted rights are preserved.
 

@@ -1,6 +1,17 @@
 # Validation / 検証範囲
 
-## alpha.57 (current)
+## alpha.59 (current)
+
+- The distributed ASI matches the installed alpha.59 binary: SHA-256 `6867D86980E8585B8EED2724B062552C6B048DAF5C7367567AE9C1EAB66DC17B`. Runtime source and public source are compared byte-for-byte; build paths may change a rebuild's binary hash.
+- Release Win32 builds successfully. The core offline harness passes 1,396 checks, with 0 failures and one optional owned-voice check skipped. Update-notice tests pass 55 checks offline; live-metadata and standalone-dialog modes each pass 58 (including repeated base checks).
+- Standalone Japanese/English test dialogs were created and auto-closed. Numeric versions, release/asset filtering, notification serialization, bounded queues and gameplay cancellation are tested. This is not screenshot QA or an in-game startup/combined-MOD acceptance test.
+- The alpha.58 cruising and speed-matching changes received user gameplay confirmation. No additional game run is implied by packaging alpha.59. The new startup notice still needs in-game acceptance when an eligible newer release exists.
+- Effective INI values match the current installed configuration. The unchanged icon has SHA-256 `CA929293186A10867B65729CE78AF89C5F5DE880239A402EC68E35E0169D32D1`. Packaging does not modify the installation or saves.
+- Optional integration code is retained; no separate integration MOD binaries are bundled. Missing/unavailable interfaces disable only the dependent features. Other executable/car/mod configurations, extended-duration behavior and difficult AI routes remain unverified.
+
+配布ASIは導入済みalpha.59と同一です。公開ソースとの一致・Win32ビルド・本体1,396件と通知55件のオフライン試験を確認。実通信・独立ウィンドウ試験は各58件（基礎試験を含む）です。alpha.58の巡航・開始条件はユーザー実走確認済みですが、alpha.59の実ゲーム起動時通知と他MODを組み合わせた通知表示は未検証です。INI実効値を維持し、梱包でゲーム本体やセーブは変更しません。
+
+## alpha.57 (previous release / 過去の記録)
 
 - The distributed ASI is the exact installed binary accepted by the user after the Japanese text hotfix: SHA-256 `DB9B94D5A830A923F00B8568AF5A3D55C23512D99695502354A33579CF3859C7`.
 - Runtime acceptance is the user's report of no noticeable issues on the development installation. No new gameplay run is implied by release preparation.

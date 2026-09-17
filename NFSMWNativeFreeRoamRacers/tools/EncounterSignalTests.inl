@@ -27,9 +27,9 @@
         rival.position.z = 30; rival.heading.z = -1;
         expect(!IsEncounterFollowing(player, rival), "encounter oncoming traffic excluded");
         rival.heading.z = 1; rival.speed = 0;
-        expect(IsEncounterFollowing(player, rival), "encounter stationary rival now eligible");
+        expect(!IsEncounterFollowing(player, rival), "alpha58 stationary rival requires player to match speed");
         rival.speed = 37;
-        expect(IsEncounterFollowing(player, rival), "encounter speed delta above 60kmh no longer blocks engagement");
+        expect(!IsEncounterFollowing(player, rival), "alpha58 large speed delta blocks engagement");
         rival.speed = 20; rival.driverClass = kDriverTraffic;
         expect(!IsEncounterFollowing(player, rival), "encounter ambient traffic excluded");
         rival.driverClass = kDriverRacer; rival.position.x = std::numeric_limits<float>::quiet_NaN();
@@ -94,7 +94,7 @@
             "encounter candidate alone does not instantly arm");
         for(unsigned i=0;i<3;++i) updateCandidate(player,challengeVehicles,0.05f);
         expect(g_encounterCandidate.ready,"encounter sustained 0.15-second following arms");
-        challengeVehicles[1].speed = 42.0f;
+        challengeVehicles[1].speed = 20.0f; // Isolate heading grace from the alpha58 hard speed gate.
         player.heading = {0.98f,0,0.15f};
         const auto lastQualified = g_encounterCandidate.qualifiedTick = GetTickCount64() - 125;
         updateCandidate(player,challengeVehicles,0.05f);
@@ -211,14 +211,15 @@
         expect(IsEncounterFollowing(p,r),"encounter sixty meter boundary accepted");
         r.position.z=60.01f;
         expect(!IsEncounterFollowing(p,r),"encounter sixty meter radius not extended");
-        r.position={14,0,30}; r.speed=29;
-        expect(IsEncounterFollowing(p,r),"encounter wider lane offset and former speed-delta rejection now accepted");
+        r.position={14,0,30}; r.speed=22;
+        expect(IsEncounterFollowing(p,r),"encounter wider lane offset with matched speed accepted");
         p.speed=r.speed=5.0f/3.6f;
         expect(IsEncounterFollowing(p,r),"encounter low-speed following at five kmh accepted");
         p.speed=r.speed=20; p.heading={0.8f,0,0.6f};
         expect(IsEncounterFollowing(p,r),"encounter moderate turning angle accepted");
         p.heading={0,0,1}; r.position={0,0,30}; r.speed=42;
-        expect(IsEncounterFollowing(p,r),"encounter approaching fast racer needs no speed matching");
+        expect(!IsEncounterFollowing(p,r),"alpha58 approaching fast racer must match speed");
+        r.speed=p.speed;
         p.heading={0.98f,0,0.15f};
         EncounterCandidate c{};c.player=p.pointer;c.rival=r.pointer;c.key=r.vehicleKey;c.ready=true;
         c.sampleTick=10000;c.qualifiedTick=10000;
