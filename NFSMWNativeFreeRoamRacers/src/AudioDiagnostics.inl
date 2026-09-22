@@ -8,7 +8,7 @@ constexpr std::size_t kSoundPrimaryFromAudible = 0x54;
 static_assert(offsetof(NFSPluginSDK::MW05::PVehicle, mAudible) == 0x10C,
               "PVehicle audible layout changed");
 constexpr ULONGLONG kAudioSampleMilliseconds = 5000;
-bool g_audioDiagnosticsEnabled = true;
+bool g_audioDiagnosticsEnabled = false;
 ULONGLONG g_audioNextSample = 0;
 std::vector<VehicleSnapshot> g_audioVehicles;
 

@@ -5,8 +5,10 @@
 #include "Alpha23Fixtures.inl"
 #include "Alpha32Fixtures.inl"
 #include "Alpha38Fixtures.inl"
+#include "Alpha71Fixtures.inl"
 #include "../include/EncounterBattleModel.h"
 #include <memory>
+#include <thread>
 #pragma comment(lib,"d3d9.lib")
 #pragma comment(lib,"user32.lib")
 
@@ -64,6 +66,15 @@ std::uint32_t __fastcall FakeNativeQuery(void*, void*, const void* vehicle,
     return nativeVote;
 }
 }
+#include "Alpha76Tests.inl"
+#include "Alpha77Tests.inl"
+#include "Alpha78Tests.inl"
+#include "Alpha79Tests.inl"
+#include "Alpha81Tests.inl"
+#include "Alpha82Tests.inl"
+#include "Alpha83Tests.inl"
+#include "Alpha85Tests.inl"
+#include "Alpha88Tests.inl"
 int RunCacheTests() {
     auto* region = VirtualAlloc(nullptr, 0x120000,
         MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
@@ -173,13 +184,13 @@ int RunCacheTests() {
     expect(ConsumeManagementTick(0.25f, &pending, &step) && step == 0.25f &&
            !ConsumeManagementTick(0.0f, &pending, &step),
            "long frame triggers one management pass without catch-up burst");
-    g_vehicleScratch.reserve(kMaximumVehicles);
+    g_vehicleScratch.reserve(kInitialVehicleReserve);
     const auto* scratchStorage = g_vehicleScratch.data();
-    g_vehicleScratch.resize(kMaximumVehicles);
+    g_vehicleScratch.resize(kInitialVehicleReserve);
     g_vehicleScratch.clear();
     g_vehicleScratch.resize(20);
     expect(g_vehicleScratch.data() == scratchStorage &&
-           g_vehicleScratch.capacity() >= kMaximumVehicles,
+           g_vehicleScratch.capacity() >= kInitialVehicleReserve,
            "snapshot storage survives clear and reuse without reallocating");
     g_vehicleScratch.clear();
     expect(WindowStart(76, 2, 8) == 0 && WindowStart(76, 73, 8) == 68 &&
@@ -720,6 +731,28 @@ int RunCacheTests() {
 #include "Alpha57Tests.inl"
 #include "Alpha58Tests.inl"
 #include "Alpha59Tests.inl"
+#include "Alpha63Tests.inl"
+#include "Alpha64Tests.inl"
+#include "Alpha65Tests.inl"
+#include "Alpha66Tests.inl"
+#include "Alpha67Tests.inl"
+#include "Alpha68Tests.inl"
+#include "Alpha69Tests.inl"
+#include "Alpha70Tests.inl"
+#include "Alpha71Tests.inl"
+#include "Alpha72Tests.inl"
+#include "Alpha73Tests.inl"
+#include "Alpha74Tests.inl"
+#include "Alpha75Tests.inl"
+    RunAlpha76Tests(expect);
+    RunAlpha77Tests(expect);
+    RunAlpha78Tests(expect);
+    RunAlpha79Tests(expect);
+    RunAlpha81Tests(expect);
+    RunAlpha82Tests(expect);
+    RunAlpha83Tests(expect);
+    RunAlpha85Tests(expect);
+    RunAlpha88Tests(expect);
     VirtualFree(region, 0, MEM_RELEASE);
     return failures == 0 ? 0 : 1;
 }

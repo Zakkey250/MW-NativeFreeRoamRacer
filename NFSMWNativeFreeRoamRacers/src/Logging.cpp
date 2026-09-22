@@ -10,6 +10,8 @@ namespace {
 
 std::mutex g_logMutex;
 wchar_t g_logPath[MAX_PATH]{};
+thread_local unsigned g_logBatchDepth=0;
+thread_local HANDLE g_logBatchFile=INVALID_HANDLE_VALUE;
 
 const char* LevelName(const LogLevel level) noexcept {
     switch (level) {
@@ -20,6 +22,14 @@ const char* LevelName(const LogLevel level) noexcept {
 }
 
 }  // namespace
+
+LogBatch::LogBatch() noexcept { ++g_logBatchDepth; }
+LogBatch::~LogBatch() noexcept {
+    if(--g_logBatchDepth==0 && g_logBatchFile!=INVALID_HANDLE_VALUE) {
+        CloseHandle(g_logBatchFile);
+        g_logBatchFile=INVALID_HANDLE_VALUE;
+    }
+}
 
 void InitializeLogging(const HMODULE module) noexcept {
     wchar_t path[MAX_PATH]{};
@@ -47,13 +57,21 @@ void Log(const LogLevel level, const char* format, ...) noexcept {
              time.wSecond, time.wMilliseconds, LevelName(level), message);
 
     std::lock_guard<std::mutex> lock(g_logMutex);
-    HANDLE file = CreateFileW(g_logPath, FILE_APPEND_DATA,
+    HANDLE file = g_logBatchDepth?g_logBatchFile:INVALID_HANDLE_VALUE;
+    if(file==INVALID_HANDLE_VALUE) file = CreateFileW(g_logPath, FILE_APPEND_DATA,
                               FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
                               OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) return;
+    if(g_logBatchDepth) g_logBatchFile=file;
     DWORD written = 0;
-    WriteFile(file, line, static_cast<DWORD>(strlen(line)), &written, nullptr);
-    CloseHandle(file);
+    const auto length=static_cast<DWORD>(strlen(line));
+    const bool complete=WriteFile(file,line,length,&written,nullptr)!=FALSE && written==length;
+    // Do not replay partially written rows. On failure discard this handle so
+    // the next row can retry opening, just as the original per-row logger did.
+    if(!g_logBatchDepth || !complete) {
+        CloseHandle(file);
+        if(g_logBatchDepth) g_logBatchFile=INVALID_HANDLE_VALUE;
+    }
 }
 
 }  // namespace native_freeroam

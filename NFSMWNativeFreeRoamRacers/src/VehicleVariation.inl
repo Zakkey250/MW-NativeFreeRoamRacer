@@ -127,6 +127,7 @@ bool ValidStockPerformance(bool estimateSucceeded, const std::array<float, 3>& r
 }
 
 #include "DynamicVehicleCatalog.inl"
+#include "VehicleVarietyExpansion.inl"
 
 bool BuildVehiclePalette(std::uint32_t playerKey, const char* model) {
     g_palette.clear();
@@ -141,7 +142,8 @@ bool BuildVehiclePalette(std::uint32_t playerKey, const char* model) {
     }
     const auto center = static_cast<std::size_t>(current - g_catalog.begin());
     // This is a model-type budget including the player's model, not a vehicle-count limit.
-    const auto width = std::min(std::clamp<std::size_t>(g_settings.vehicleVariety, 1, 5), g_catalog.size());
+    LockVehicleVarietyForWorld();
+    const auto width = std::min(EffectiveVehicleVariety(), g_catalog.size());
     const auto start = WindowStart(g_catalog.size(), center, width);
     std::string names;
     for (std::size_t i = start; i < start + width; ++i) {
@@ -149,9 +151,9 @@ bool BuildVehiclePalette(std::uint32_t playerKey, const char* model) {
         if (!names.empty()) names += ',';
         names += g_catalog[i].installed->model;
     }
-    Log(LogLevel::Info, "VEHICLE_PALETTE player=%s rank=%u window=%u-%u count=%u models=%s playerIncluded=1 modelLimit=5",
+    Log(LogLevel::Info, "VEHICLE_PALETTE player=%s rank=%u window=%u-%u count=%u models=%s playerIncluded=1 modelLimit=%u",
         model, static_cast<unsigned>(center+1), static_cast<unsigned>(start+1),
-        static_cast<unsigned>(start+width), static_cast<unsigned>(width), names.c_str());
+        static_cast<unsigned>(start+width), static_cast<unsigned>(width), names.c_str(),static_cast<unsigned>(VehicleModelLimit()));
     return !g_palette.empty();
 }
 

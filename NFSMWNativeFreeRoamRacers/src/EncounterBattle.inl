@@ -1,6 +1,22 @@
-struct EncounterNativeAI { void *primary=nullptr,*racer=nullptr,*goal=nullptr,*action=nullptr,*nav=nullptr,*target=nullptr; };
+struct EncounterNativeAI {
+    void *primary=nullptr,*racer=nullptr,*goal=nullptr,*action=nullptr,*nav=nullptr,*target=nullptr;
+    std::uint8_t navValid=0;
+    bool raceAction=false;
+};
+enum class NativeStartResult { Pending, Ready, Failed };
+struct EncounterNativeStart {
+    bool issued=false,chooseIssued=false,waitLogged=false,reseedIssued=false;
+    ULONGLONG issuedAt=0;
+    unsigned polls=0;
+    NativeStartResult result=NativeStartResult::Pending;
+    EncounterNativeAI owner{},last{};
+    const char* failure="none";
+};
+constexpr ULONGLONG kNativeStartTimeoutMs=1000;
 struct EncounterRuntime {
     battle::Model model;
+    battle::Model startModel;
+    EncounterNativeStart nativeStart;
     battle::Identity player{},rival{};
     bool pending=false, aiChanged=false, rewardAttempted=false, leadRoutePending=false;
     int actor=-1;
@@ -93,23 +109,31 @@ bool EncounterMarkerAllowed(const ManagedRacer& racer) noexcept {
 bool BattleVtable(void* object,std::uintptr_t expected) noexcept {
     std::uintptr_t value=0;return AudioRead(object,&value)&&value==Address(expected);
 }
-bool ReadEncounterAI(const battle::Identity& identity,EncounterNativeAI& out,bool actionRequired=true) noexcept {
+bool ReadEncounterAIStructure(const battle::Identity& identity,EncounterNativeAI& out,const char*& failure) noexcept {
+    out={};failure="vehicle-identity";
     auto* vehicle=reinterpret_cast<void*>(identity.vehicle);
     VehicleSnapshot snapshot{};
     if(!ReadVehicle(vehicle,&snapshot)||snapshot.vehicleKey!=identity.key||snapshot.driverClass!=kDriverRacer ||
         reinterpret_cast<std::uintptr_t>(GetSimablePointer(vehicle))!=identity.simable) return false;
     void* ai=nullptr;
+    failure="vehicle-ai-vtable";
     if(!AudioRead(static_cast<unsigned char*>(vehicle)+0x54,&ai)||!BattleVtable(ai,kRacecarIVehicleAIVtable)) return false;
     auto* primary=static_cast<unsigned char*>(ai)-0x4C;
     out.primary=primary;out.racer=primary+0x7C4;
-    if(!BattleVtable(primary,kRacecarPrimaryVtable)||!BattleVtable(out.racer,0x008925B4)||
-        !AudioRead(primary+0xB8,&out.goal)||!BattleVtable(out.goal,kAIGoalRacerVtable)||
-        !AudioRead(static_cast<unsigned char*>(out.goal)+4,&out.action)||
-        !AudioRead(static_cast<unsigned char*>(ai)+0x24,&out.nav)||!out.nav||
-        !AudioRead(static_cast<unsigned char*>(ai)+0x54,&out.target)||!out.target) return false;
-    std::uint8_t valid=0;
-    return AudioRead(static_cast<unsigned char*>(out.nav)+0x50,&valid)&&valid &&
-        (!actionRequired||BattleVtable(out.action,kAIActionRaceVtable));
+    failure="primary-vtable";if(!BattleVtable(primary,kRacecarPrimaryVtable)) return false;
+    failure="racer-vtable";if(!BattleVtable(out.racer,0x008925B4)) return false;
+    failure="goal-vtable";
+    if(!AudioRead(primary+0xB8,&out.goal)||!BattleVtable(out.goal,kAIGoalRacerVtable)) return false;
+    failure="action-read";if(!AudioRead(static_cast<unsigned char*>(out.goal)+4,&out.action)) return false;
+    failure="nav-pointer";if(!AudioRead(static_cast<unsigned char*>(ai)+0x24,&out.nav)||!out.nav) return false;
+    failure="target-pointer";if(!AudioRead(static_cast<unsigned char*>(ai)+0x54,&out.target)||!out.target) return false;
+    failure="nav-valid-read";if(!AudioRead(static_cast<unsigned char*>(out.nav)+0x50,&out.navValid)) return false;
+    out.raceAction=BattleVtable(out.action,kAIActionRaceVtable);
+    failure="none";return true;
+}
+bool ReadEncounterAI(const battle::Identity& identity,EncounterNativeAI& out,bool actionRequired=true) noexcept {
+    const char* failure=nullptr;
+    return ReadEncounterAIStructure(identity,out,failure)&&out.navValid&&(!actionRequired||out.raceAction);
 }
 
 #include "EncounterRaceSkill.inl"
@@ -121,21 +145,16 @@ bool ReadEncounterAI(const battle::Identity& identity,EncounterNativeAI& out,boo
 #include "EncounterGuide.inl"
 #include "EncounterCatchupProbe.inl"
 
-bool NativeEncounterStart(const battle::Identity& rival) noexcept {
-    __try {
-        EncounterNativeAI ai{};if(!ReadEncounterAI(rival,ai)) return false;
-        // Verified IRacer subobject and RET4; Racing=0, not Drag=1.
-        reinterpret_cast<void(__thiscall*)(void*,unsigned)>(Address(0x00423010))(ai.racer,0);
-        if(!ReadEncounterAI(rival,ai,false)) return false;
-        if(!ai.action) reinterpret_cast<void(__thiscall*)(void*,float)>(Address(kGoalChooseAction))(ai.goal,0.0f);
-        return ReadEncounterAI(rival,ai);
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        Log(LogLevel::Error,"ENCOUNTER_AI start exception=%08X",GetExceptionCode());return false;
-    }
-}
+#include "EncounterNativeStart.inl"
 bool NativeEncounterRestore(const battle::Identity& rival) noexcept {
     __try {
-        EncounterNativeAI ai{};if(!ReadEncounterAI(rival,ai,false)) return false;
+        EncounterNativeAI ai{};const char* failure=nullptr;
+        if(!ReadEncounterAIStructure(rival,ai,failure)) return false;
+        // QuitRace also cancels an incomplete start whose nav is not valid yet.
+        // Never restore a different/recycled AI owner after a pending failure.
+        const bool pendingStart=g_battle.pending&&g_battle.nativeStart.issued;
+        if(pendingStart&&NativeStartOwnerChanged(g_battle.nativeStart.owner,ai)) return false;
+        if(!pendingStart&&!ai.navValid) return false; // Preserve normal-battle restore policy.
         // QuitRace clears AITarget, resets the native nav to Direction/Racer, and
         // leaves the racecar/goal/action owning their own steering and recovery.
         reinterpret_cast<void(__thiscall*)(void*)>(Address(0x00416900))(ai.racer);
@@ -285,7 +304,7 @@ void EndEncounterBattle(bool restore,bool cancelVoice) noexcept {
     ClearEncounterPowerBoost();
     StopEncounterGuide(restore);g_guide={};
     ClearEncounterRaceSkill();
-    if(g_battle.aiChanged&&restore) {
+    if((g_battle.aiChanged||g_battle.nativeStart.issued)&&restore) {
         const bool restored=NativeEncounterRestore(g_battle.rival);
         Log(LogLevel::Info,"ENCOUNTER_AI restored=%u rival=%p",unsigned(restored),reinterpret_cast<void*>(g_battle.rival.vehicle));
     }
@@ -307,6 +326,10 @@ void EncounterMissingSample(float dt) noexcept {
     ClearEncounterPowerBoost();
     StopEncounterGuide(false);
     if(!EncounterBattleBusy()) return;
+    if(g_battle.pending&&g_battle.nativeStart.issued) {
+        LogNativeStart(g_battle.nativeStart,g_battle.rival,"cancel-missing",0,GetTickCount64(),"missing-sample");
+        EndEncounterBattle(false,true);return; // No stale vehicle dereference.
+    }
     if(g_battle.missingSeconds==0) {
         Log(LogLevel::Info,"ENCOUNTER_HOLD reason=missing-sample noResult=1");
         if(g_settings.encounterAIMode==encounter_custom::Mode::Custom) {
@@ -325,6 +348,16 @@ void EncounterMissingSample(float dt) noexcept {
 void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::vector<VehicleSnapshot>& vehicles,float dt) noexcept {
     if(g_encounterEnabled&&g_battleSurface) EnsureEncounterGauge();
     if(!EncounterBattleBusy()) return;
+    if(g_battle.pending&&g_battle.nativeStart.issued&&
+        NativeStartExpired(g_battle.nativeStart,GetTickCount64())) {
+        const char* field=nullptr;
+        if(ReadEncounterAIStructure(g_battle.rival,g_battle.nativeStart.last,field))
+            field=!g_battle.nativeStart.last.navValid?"nav-invalid":
+                (!g_battle.nativeStart.last.raceAction?"race-action-unavailable":"deadline");
+        LogNativeStart(g_battle.nativeStart,g_battle.rival,"timeout",unsigned(vehicles.size()),GetTickCount64(),field);
+        Log(LogLevel::Warning,"ENCOUNTER_CANCEL reason=native-start-timeout");
+        EndEncounterBattle(true,true);return;
+    }
     if(g_battle.weaponForfeit&&g_battle.model.phase()==battle::Phase::Active) {
         g_battle.model.Forfeit();
         ShowEncounterMessage(g_encounterHud,encounter_text::Id::Forfeit);
@@ -337,7 +370,8 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
     });
     if(found==vehicles.end()) {EncounterMissingSample(dt);return;}
     VehicleSnapshot player{},rivalGeometry{};
-    if(!ReadEncounterGeometry(legacyPlayer,player,g_battle.pending)||!ReadEncounterGeometry(*found,rivalGeometry,g_battle.pending)) {
+    const bool requireStartHeading=g_battle.pending&&!g_battle.nativeStart.issued;
+    if(!ReadEncounterGeometry(legacyPlayer,player,requireStartHeading)||!ReadEncounterGeometry(*found,rivalGeometry,requireStartHeading)) {
         EncounterMissingSample(dt);return;
     }
     const auto* rival=&rivalGeometry;
@@ -351,20 +385,32 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
     const battle::Sample sample{EncounterCar(player),EncounterCar(*rival),true,paused||resumed};
     if(paused||resumed) {
         ClearEncounterPowerBoost();
-        g_battle.model.Step(sample,dt);g_gaugeVisible=false;return;
+        if(!g_battle.pending) g_battle.model.Step(sample,dt);
+        g_gaugeVisible=false;return;
     }
     if(g_battle.pending) {
-        g_battle.pending=false;
-        g_battle.profile=EncounterProfile();g_battle.aiChanged=true;
-        unsigned char bin=0;
-        if(g_battle.profile)AudioRead(&static_cast<NFSPluginSDK::MW05::UserProfile*>(g_battle.profile)->mTheCareerSettings.CurrentBin,&bin);
-        g_battle.blacklist=bin;
-        g_battle.reward=encounter_reward::Amount(g_settings.encounterAIMode==encounter_custom::Mode::Custom,bin);
-        if(g_battle.model.Start(sample,g_battle.reward).event!=battle::Event::Started) {EndEncounterBattle(false,true);return;}
-        if(!NativeEncounterStart(g_battle.rival)) {
-            Log(LogLevel::Warning,"ENCOUNTER_CANCEL reason=native-start-rejected");
+        if(!g_battle.nativeStart.issued) {
+            g_battle.profile=EncounterProfile();
+            unsigned char bin=0;
+            if(g_battle.profile)AudioRead(&static_cast<NFSPluginSDK::MW05::UserProfile*>(g_battle.profile)->mTheCareerSettings.CurrentBin,&bin);
+            g_battle.blacklist=bin;
+            g_battle.reward=encounter_reward::Amount(g_settings.encounterAIMode==encounter_custom::Mode::Custom,bin);
+            // Validate/seed once at acceptance, but keep the live model Idle.
+            if(g_battle.startModel.Start(sample,g_battle.reward).event!=battle::Event::Started) {EndEncounterBattle(false,true);return;}
+        } else if(EncounterProfile()!=g_battle.profile) {
+            Log(LogLevel::Info,"ENCOUNTER_CANCEL reason=start-profile-changed");
             EndEncounterBattle(true,true);return;
         }
+        const auto native=NativeEncounterStart(g_battle.rival,GetTickCount64(),unsigned(vehicles.size()));
+        g_battle.aiChanged=g_battle.nativeStart.issued;
+        if(native==NativeStartResult::Failed) {
+            Log(LogLevel::Warning,"ENCOUNTER_CANCEL reason=native-start-failed field=%s",g_battle.nativeStart.failure);
+            EndEncounterBattle(true,true);return;
+        }
+        if(native==NativeStartResult::Pending) {g_gaugeVisible=false;return;}
+        g_battle.pending=false;g_battle.model=g_battle.startModel;
+        // Resample current positions without evaluating the waiting interval.
+        auto resumedSample=sample;resumedSample.paused=true;g_battle.model.Step(resumedSample,0);
         BindEncounterRaceSkill(g_battle.rival);
         g_battle.leadRoutePending=true;g_battle.routeSeconds=1;
         auto owner=std::find_if(g_racers.begin(),g_racers.end(),[](const auto& r) {

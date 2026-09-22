@@ -1,0 +1,80 @@
+template<class Expect>
+__declspec(noinline) void RunAlpha78Tests(Expect expect) {
+    AdaptiveSpawnPolicy p;
+    expect(!p.Defer(true,false,100),"alpha78 no timing evidence cannot delay spawning");
+    p.Observe(49999,100);
+    expect(!p.Defer(true,false,100),"alpha78 normal frame below threshold unchanged");
+    p.Observe(50000,200);
+    expect(p.Defer(true,false,200)&&p.deadline==2200,"alpha78 slow frame starts bounded deferral");
+    expect(!p.Defer(false,false,201)&&!p.waiting,"alpha78 disabled policy restores legacy pacing");
+    expect(!p.Defer(true,true,202),"alpha78 in-flight preparation and vacancy lease bypass delay");
+    expect(p.Defer(true,false,203),"alpha78 new preparation may defer during pressure");
+    p.Observe(16000,949);
+    expect(p.Defer(true,false,949)&&!p.Defer(true,false,950),"alpha78 recovery clears delay after 750ms without extending pressure on normal frames");
+    p={};unsigned allowed=0,denied=0;
+    for(std::uint64_t now=100;now<=30100;now+=1000){
+        p.Observe(100000,now);
+        if(p.Defer(true,false,now))++denied;else ++allowed;
+    }
+    expect(allowed==10&&denied==21&&p.forcedOpportunities==10,"alpha78 sustained low FPS still grants one opportunity every three due checks");
+    p={};p.Observe(100000,100);p.Defer(true,false,100);
+    expect(!p.Defer(true,false,1200),"alpha78 stale timing after pause never blocks spawn");
+    p.Observe(100000,1300);p.Defer(true,false,1300);
+    p.Observe(3000000,1400);
+    expect(!p.sampled&&!p.Defer(true,false,1400),"alpha78 large loading gap discarded");
+    p.Observe(100000,1500);p.Observe(16000,1499);
+    expect(!p.sampled&&!p.waiting,"alpha78 backward observation clock resets state");
+    p.Observe(100000,1600);
+    expect(!p.Defer(true,false,1599),"alpha78 backward decision clock does not underflow");
+    const auto settings=g_settings;const auto policy=g_adaptiveSpawn;
+    const auto previous=g_spawnLoadPreviousStart,reportAt=g_spawnLoadDiagnosticAt;
+    const auto frequency=g_frequency;
+    g_settings.adaptiveSpawnPacing=true;g_settings.frameTimingDiagnostics=false;
+    QueryPerformanceFrequency(&g_frequency);
+    expect(FrameClockNow()>0&&PerformanceNow()==0,"alpha78 pacing clock works with diagnostic histograms OFF");
+    ResetAdaptiveSpawnPacing();
+    ObserveAdaptiveSpawnFrame(1000,2000,true,100);
+    expect(!g_adaptiveSpawn.sampled,"alpha78 first world frame excludes load interval");
+    ObserveAdaptiveSpawnFrame(101000,102000,true,200);
+    expect(g_adaptiveSpawn.sampled&&g_adaptiveSpawn.Defer(true,false,200),"alpha78 second valid frame feeds pacing evidence");
+    ObserveAdaptiveSpawnFrame(201000,202000,false,300);
+    expect(!g_adaptiveSpawn.sampled&&!g_spawnLoadPreviousStart,"alpha78 world exit clears load pressure");
+    ObserveAdaptiveSpawnFrame(301000,302000,true,400);
+    ObserveAdaptiveSpawnFrame(317000,417000,true,500);
+    expect(g_adaptiveSpawn.triggerFrameUs==100000,"alpha78 current long native hook observed even when previous frame was fast");
+    g_settings.adaptiveSpawnPacing=false;
+    expect(FrameClockNow()==0,"alpha78 both switches OFF perform no frame clock sampling");
+    // Real Replenish, offline and without a provider, no native construction.
+    const auto frontend=g_frontendCache.ready,finished=g_catalogFinished;
+    const auto palette=g_palette;const auto paletteKey=g_palettePlayerKey;
+    const auto pacing=g_refillPacing;const auto preparation=g_spawnPreparation;
+    const auto spawnTimer=g_spawnTimer,backoff=g_spawnFailureBackoffSeconds;
+    const auto refillReport=g_refillDiagnosticAt;const auto release=g_populationRelease;
+    const auto transaction=g_populationTransaction;const auto counters=g_populationApiCounters;
+    auto racers=std::move(g_racers);
+    g_frontendCache.ready=false;g_catalogFinished=true;g_palette={0};g_palettePlayerKey=0x1234;
+    g_settings.maximumRacers=6;g_settings.spawnIntervalSeconds=5;g_settings.adaptiveSpawnPacing=true;
+    g_refillPacing={};g_spawnPreparation={};g_spawnTimer=0;g_spawnFailureBackoffSeconds=0;
+    g_refillDiagnosticAt=~ULONGLONG{0};g_spawnLoadDiagnosticAt=~ULONGLONG{0};
+    g_populationRelease={};g_populationTransaction={};g_populationApiCounters={};
+    VehicleSnapshot player{};player.vehicleKey=0x1234;
+    const std::vector<VehicleSnapshot> noAnchors;
+    g_adaptiveSpawn={};g_adaptiveSpawn.Observe(100000,GetTickCount64());
+    Replenish(player,noAnchors,1.0f);
+    expect(!g_populationApiCounters.idle&&!g_populationApiCounters.reserve&&g_adaptiveSpawn.deferrals==1,
+        "alpha78 real due Replenish delays before LB query or reservation");
+    g_spawnPreparation.phase=SpawnPreparationPhase::Appearance;
+    Replenish(player,noAnchors,1.0f);
+    expect(g_populationApiCounters.idle==1,"alpha78 in-flight preparation bypasses pressure and keeps normal no-anchor cleanup");
+    g_populationTransaction.Begin(GetTickCount64());
+    Replenish(player,noAnchors,1.0f);
+    expect(g_populationApiCounters.reserve==1,"alpha78 pending one-slot vacancy is not prolonged by load gate");
+    g_adaptiveSpawn={};Replenish(player,noAnchors,1.0f);
+    expect(g_populationApiCounters.idle==2,"alpha78 recovered timing resumes ordinary LB-absent search");
+    g_settings=settings;g_adaptiveSpawn=policy;g_spawnLoadPreviousStart=previous;g_spawnLoadDiagnosticAt=reportAt;
+    g_frequency=frequency;g_frontendCache.ready=frontend;g_catalogFinished=finished;
+    g_palette=palette;g_palettePlayerKey=paletteKey;g_refillPacing=pacing;g_spawnPreparation=preparation;
+    g_spawnTimer=spawnTimer;g_spawnFailureBackoffSeconds=backoff;g_refillDiagnosticAt=refillReport;
+    g_populationRelease=release;g_populationTransaction=transaction;g_populationApiCounters=counters;
+    g_racers=std::move(racers);
+}

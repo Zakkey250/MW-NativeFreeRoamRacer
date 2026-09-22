@@ -28,6 +28,12 @@ bool PerformanceSurfaceAvailable() noexcept {
         {0x00576670,{0xA1,0x90,0xCF,0x91,0,0x8B,0x48,0x10}},
         {0x005769C0,{0x8B,0x44,0x24,0x04,0x83,0xF8,0x06,0x77}},
         {0x0056F210,{0x8B,0x44,0x24,0x04,0x81,0xC1,0x18,0x01}},
+        {0x00454760,{0x8B,0xC1,0x8B,0x48,0x04,0x83,0xEC,0x10}},
+        {0x00458660,{0x8B,0x41,0x08,0x85,0xC0,0x74,0x22,0x66}},
+        {0x00452D40,{0x8B,0x51,0x08,0x85,0xD2,0x74,0x36,0x8B}},
+        {0x00452BD0,{0x8B,0x01,0x85,0xC0,0x74,0x04,0x66,0xFF}},
+        {0x00454C30,{0x8B,0x51,0x08,0x85,0xD2,0x74,0x4A,0x8A}},
+        {0x00455FD0,{0xA1,0xBC,0xDC,0x90,0x00,0x56,0x8B,0x70}},
     };
     for(const auto& guard:guards) {
         std::array<std::uint8_t,8> actual{};
@@ -38,8 +44,11 @@ bool PerformanceSurfaceAvailable() noexcept {
     return true;
 }
 
-enum class PerformanceEligibility { Deferred, Ready, NoNitrous };
+enum class PerformanceEligibility { Deferred, Ready, NoNitrous, CoolingDown, InvalidReference };
 struct CareerPerformancePlan { PerformanceLevels maximum{},chosen{}; };
+
+#include "PerformanceRetry.inl"
+#include "PerformanceReferences.inl"
 
 template<class Unlocked>
 PerformanceEligibility PrepareCareerPerformance(const PerformanceLevels& maximum,
@@ -52,9 +61,18 @@ PerformanceEligibility PrepareCareerPerformance(const PerformanceLevels& maximum
 }
 
 PerformanceEligibility ReadCareerPerformancePlan(std::uint32_t key,CareerPerformancePlan* plan) noexcept {
+    if(g_invalidPerformanceModels.Contains(key,g_catalogGeneration))return PerformanceEligibility::InvalidReference;
     using namespace NFSPluginSDK::MW05;
     static_assert(offsetof(FECustomizationRecord,mInstalledPhysics)==0x118);
     static_assert(sizeof(Physics::Upgrades::Package)==32);
+    static_assert(offsetof(Physics::Upgrades::Package,mTires)==0);
+    static_assert(offsetof(Physics::Upgrades::Package,mBrakes)==4);
+    static_assert(offsetof(Physics::Upgrades::Package,mChassis)==8);
+    static_assert(offsetof(Physics::Upgrades::Package,mTransmission)==12);
+    static_assert(offsetof(Physics::Upgrades::Package,mEngine)==16);
+    static_assert(offsetof(Physics::Upgrades::Package,mInduction)==20);
+    static_assert(offsetof(Physics::Upgrades::Package,mNOS)==24);
+    static_assert(offsetof(Physics::Upgrades::Package,mJunkman)==28);
     Attrib::Gen::pvehicle instance{};
     bool initialized=false,success=false;
     PerformanceLevels maximum{};
@@ -81,6 +99,7 @@ PerformanceEligibility ReadCareerPerformancePlan(std::uint32_t key,CareerPerform
                     return reinterpret_cast<bool(__cdecl*)(int,unsigned,int,int,bool)>(Address(0x0058A960))(2,type,shop,0,false);
                 });
                 if(eligibility!=PerformanceEligibility::Ready) return eligibility;
+                if(!ValidateNativePerformanceReferences(key,&instance,*plan))return PerformanceEligibility::InvalidReference;
                 success=true;
             }
         } __finally {
@@ -107,7 +126,8 @@ void WriteCareerPerformancePlan(std::uint32_t key,const CareerPerformancePlan& p
 #include "SpawnEligibility.inl"
 
 bool VerifySpawnPerformance(NFSPluginSDK::MW05::PVehicle* created,
-                           const NFSPluginSDK::MW05::FECustomizationRecord& requested) noexcept {
+                           const NFSPluginSDK::MW05::FECustomizationRecord& requested,
+                           std::uint32_t key) noexcept {
     using namespace NFSPluginSDK::MW05;
     static_assert(offsetof(PVehicle,mAttributes)==0xD0);
     PerformanceLevels expected{},actual{};
@@ -117,7 +137,7 @@ bool VerifySpawnPerformance(NFSPluginSDK::MW05::PVehicle* created,
         for(unsigned type=0;type<7;++type)
             actual[type]=reinterpret_cast<unsigned(__cdecl*)(const void*,unsigned)>(Address(0x00672D30))(&created->mAttributes,type);
     } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
-    const bool equal=actual==expected;
+    const bool equal=RecordPerformanceVerification(key,expected,actual,GetTickCount64());
     Log(equal?LogLevel::Info:LogLevel::Warning,"PERFORMANCE_APPLIED vehicle=%p match=%u tires=%u brakes=%u chassis=%u transmission=%u engine=%u induction=%u nos=%u",
         created,unsigned(equal),actual[0],actual[1],actual[2],actual[3],actual[4],actual[5],actual[6]);
     return equal;

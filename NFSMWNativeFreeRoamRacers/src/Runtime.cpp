@@ -11,6 +11,11 @@
 #include "EncounterDirectionalTrail.h"
 #include "EncounterChaseSpeed.h"
 #include "RoamingPace.h"
+#include "PopulationPolicy.h"
+#include "RefillPolicy.h"
+#include "AnchorSearch.h"
+#include "AudioExpansionPolicy.h"
+#include "AdaptiveSpawnPolicy.h"
 #include <NFSPluginSDK/Game.MW05/Types/WRoadNav.h>
 #include "EncounterText.h"
 #include "EncounterReward.h"
@@ -47,6 +52,8 @@
 #include <cwchar>
 #include <cstring>
 #include <limits>
+#include <optional>
+#include <type_traits>
 #include <random>
 #include <string>
 #include <vector>
@@ -100,6 +107,16 @@ constexpr std::uintptr_t kGManagerAllocIcon = 0x005E9EC0;
 constexpr std::uintptr_t kGIconUnspawn = 0x005E5A00;
 constexpr std::uintptr_t kGIconSetPosition = 0x005E5A90;
 constexpr std::uintptr_t kGIconSpawn = 0x005EC270;
+constexpr std::uintptr_t kVehicleBudgetCompareImmediate = 0x00687819;
+constexpr std::uintptr_t kVehicleBudgetSubtractDisplacement = 0x0068781E;
+constexpr std::uintptr_t kVehicleEvictionReserveImmediate = 0x00687855;
+constexpr std::uintptr_t kTrafficCapacityCompareImmediate = 0x0041EC15;
+constexpr std::uintptr_t kTrafficPopulationAddImmediate = 0x00426332;
+constexpr std::uint8_t kNativeVehicleBudget = 20;
+// Alpha.60's observed AI/driver-pool boundary remains the fallback. Alpha.64
+// relaxes it only with the optional provider's verified relocated companion
+// vectors, actual vacancy and expiring traffic reservation.
+constexpr std::size_t kObservedRacerConstructionLiveCeiling = 21;
 
 constexpr std::size_t kSlotSimable = 2;
 constexpr std::size_t kSlotPosition = 3;
@@ -122,7 +139,7 @@ constexpr std::uint32_t kGameFlowRacing = 6;
 constexpr std::uint32_t kDriverHuman = 0;
 constexpr std::uint32_t kDriverTraffic = 1;
 constexpr std::uint32_t kDriverRacer = 3;
-constexpr std::uint32_t kMaximumVehicles = 256;
+constexpr std::uint32_t kInitialVehicleReserve = 256; // Preallocation, NOT an admission limit.
 constexpr std::uint32_t kMaximumIcons = 200;
 constexpr std::size_t kMaximumRacersLimit = 15;
 constexpr std::size_t kDefaultMaximumRacers = 6;
@@ -175,10 +192,16 @@ struct Settings {
     float cruisingSpeedPercent=60.0f;
     float startSpeedToleranceKmh=10.0f;
     unsigned freeRoamAudioSlots = 4;
+    bool lbEngineAudioExpansion = false;
+    bool lbVehicleVarietyExpansion = false;
+    unsigned lbNonRacerSlots = 0;
+    bool adaptiveSpawnPacing = false;
+    bool retainPreparedAppearance = false;
     std::size_t vehicleVariety = 5;
     bool randomAppearance = true;
     unsigned appearanceAttempts = 3;
     std::size_t maximumRacers = kDefaultMaximumRacers;
+    std::uint8_t totalVehicleBudget = kNativeVehicleBudget;
     float populationRadiusMeters = 600.0f;
     float markerRadiusMeters = 200.0f;
     float anchorMinimumMeters = 350.0f;
@@ -188,6 +211,8 @@ struct Settings {
     float spawnIntervalSeconds = 5.0f;
     float missingGraceSeconds = 2.0f;
     float telemetryIntervalSeconds = 5.0f;
+    bool deepAudioDiagnostics = false;
+    bool frameTimingDiagnostics = true;
     float retirementOffScreenSeconds = 1.0f;
     float hardRetirementMarginMeters = 500.0f;
 };
@@ -213,6 +238,8 @@ struct ManagedRacer {
 
 using DisplayFrameFn = int(__cdecl*)();
 using CacheQueryFn = std::uint32_t(__thiscall*)(void*, const void*, const void*);
+using AdvancedCivilianQueryFn = int(__cdecl*)(const void*);
+using ExternalPopulationTickFn = void(__cdecl*)();
 
 std::uintptr_t g_base = 0;
 DisplayFrameFn g_originalDisplayFrame = nullptr;
@@ -220,6 +247,7 @@ CacheQueryFn g_originalCacheQuery = nullptr;
 Settings g_settings{};
 std::vector<ManagedRacer> g_racers;
 std::vector<VehicleSnapshot> g_vehicleScratch;
+AnchorSearch g_anchorSearch;
 NFSPluginSDK::MW05::GManager* g_markerManager = nullptr;
 std::array<MarkerSlot, kMaximumRacersLimit> g_markers{};
 std::array<std::atomic<std::uintptr_t>, kMaximumRacersLimit>
@@ -231,6 +259,13 @@ std::array<std::atomic<std::uint32_t>, kMaximumRacersLimit> g_protectedKeys{};
 std::atomic<std::uint32_t> g_cacheWanted{0};
 std::atomic<std::uint32_t> g_cacheChangedVotes{0};
 std::atomic<std::uintptr_t> g_lastCacheVehicle{0};
+SRWLOCK g_constructionSetLock=SRWLOCK_INIT;
+std::vector<std::uintptr_t> g_externalConstructionProtectedVehicles;
+std::atomic<std::uint32_t> g_externalConstructionProtectedCount{0};
+std::atomic<bool> g_externalConstructionProtectionClaimed{false};
+std::atomic<bool> g_externalConstructionProtectionActive{false};
+std::atomic<std::uint32_t> g_externalConstructionProtectedVotes{0};
+std::atomic<std::uint32_t> g_externalConstructionProtectionStartVotes{0};
 std::mt19937 g_random{};
 LARGE_INTEGER g_frequency{};
 LARGE_INTEGER g_lastTick{};
@@ -241,6 +276,17 @@ bool g_worldReady = false;
 bool g_faulted = false;
 std::uint32_t g_consecutiveSpawnFailures = 0;
 float g_spawnFailureBackoffSeconds = 0.0f;
+std::atomic<ExternalPopulationTickFn> g_externalPopulationTick{nullptr};
+
+bool IsAdvancedCivilianVehicle(const void* vehicle) noexcept {
+    // Optional, lazy bridge.  The civilian ASI may load before or after this
+    // plugin; absence must preserve the existing anchor-selection behavior.
+    const auto module = GetModuleHandleW(L"MWAdvancedCivilianVehicles.asi");
+    if (module == nullptr) return false;
+    const auto query = reinterpret_cast<AdvancedCivilianQueryFn>(
+        GetProcAddress(module, "MWACV_IsManagedVehicleV1"));
+    return query != nullptr && query(vehicle) != 0;
+}
 
 static_assert(sizeof(NFSPluginSDK::MW05::UMath::Vector3) == 12,
               "UMath vector ABI changed");
@@ -341,6 +387,19 @@ float ReadFloatSetting(const wchar_t* path, const wchar_t* section,
 
 #include "EncounterPowerSettings.inl"
 
+unsigned ParseNativeHeadroom(const wchar_t* text) noexcept {
+    if(!text)return 0;
+    wchar_t* end=nullptr;const long value=std::wcstol(text,&end,10);
+    if(end==text)return 0;
+    while(*end==L' '||*end==L'\t')++end;
+    return *end?0u:static_cast<unsigned>(std::clamp<long>(value,0,64));
+}
+bool ReadLbAudioExpansionSetting(const wchar_t* path) noexcept {
+    // New section wins, including explicit OFF. Keep old user INIs compatible.
+    const auto legacy=GetPrivateProfileIntW(L"Audio",L"LBEngineAudioExpansion",0,path);
+    return GetPrivateProfileIntW(L"LimitBreaker",L"LBEngineAudioExpansion",legacy,path)==1;
+}
+
 void LoadSettings() noexcept {
     wchar_t modulePath[MAX_PATH]{};
     HMODULE self = nullptr;
@@ -372,6 +431,17 @@ void LoadSettings() noexcept {
     g_settings.backgroundPoliceEnabled = GetPrivateProfileIntW(L"BackgroundPolice", L"Enabled", 1, modulePath) != 0;
     g_settings.freeRoamAudioSlots = static_cast<unsigned>(std::clamp(
         static_cast<int>(GetPrivateProfileIntW(L"Audio", L"FreeRoamSlots", 4, modulePath)), 0, 4));
+    g_settings.lbEngineAudioExpansion=ReadLbAudioExpansionSetting(modulePath);
+    g_settings.lbVehicleVarietyExpansion=GetPrivateProfileIntW(L"LimitBreaker",L"LBVehicleVarietyExpansion",0,modulePath)==1;
+    wchar_t headroomText[64]{};
+    const auto headroomLength=GetPrivateProfileStringW(L"LimitBreaker",L"LBNonRacerSlots",L"0",headroomText,64,modulePath);
+    g_settings.lbNonRacerSlots=headroomLength>=63?0u:ParseNativeHeadroom(headroomText);
+    g_settings.adaptiveSpawnPacing=GetPrivateProfileIntW(L"Population",L"AdaptiveSpawnPacing",0,modulePath)==1;
+    g_settings.retainPreparedAppearance=GetPrivateProfileIntW(L"Population",L"RetainPreparedAppearance",0,modulePath)==1;
+    Log(LogLevel::Info,"SPAWN_PREPARATION_POLICY retainAppearance=%u readyLifetimeMs=%u incompleteLifetimeMs=5000 freshCareerCheck=1 extraReservation=0 lbRequired=0",
+        g_settings.retainPreparedAppearance?1u:0u,g_settings.retainPreparedAppearance?15000u:5000u);
+    Log(LogLevel::Info,"SPAWN_LOAD_POLICY enabled=%u thresholdUs=50000 cooldownMs=750 maxDeferralMs=2000 newPreparationOnly=1 lbRequired=0 diagnosticSwitchIndependent=1",
+        g_settings.adaptiveSpawnPacing?1u:0u);
     wchar_t varietyText[64]{};
     GetPrivateProfileStringW(L"Vehicles", L"Variety", L"5", varietyText, 64, modulePath);
     g_settings.vehicleVariety = ParseVehicleVariety(varietyText);
@@ -382,6 +452,16 @@ void LoadSettings() noexcept {
     GetPrivateProfileStringW(L"Population", L"MaximumRacers", L"6",
                             maximumText, 64, modulePath);
     g_settings.maximumRacers = ParseMaximumRacers(maximumText);
+    const int requestedVehicleBudget = static_cast<int>(GetPrivateProfileIntW(
+        L"Population", L"TotalVehicleBudget", kNativeVehicleBudget,
+        modulePath));
+    g_settings.totalVehicleBudget = kNativeVehicleBudget;
+    if (requestedVehicleBudget != kNativeVehicleBudget) {
+        Log(LogLevel::Error,
+            "VEHICLE_BUDGET_CLAMPED requested=%d effective=%u reason=fixed-pvehicle-array-capacity",
+            requestedVehicleBudget,
+            static_cast<unsigned>(kNativeVehicleBudget));
+    }
     g_settings.populationRadiusMeters = std::clamp(
         ReadFloatSetting(modulePath, L"Population", L"RadiusMeters", 600.0f),
         100.0f, 1000.0f);
@@ -409,7 +489,14 @@ void LoadSettings() noexcept {
         ReadFloatSetting(modulePath, L"Diagnostics", L"TelemetryIntervalSeconds",
                          5.0f),
         1.0f, 60.0f);
+    g_settings.deepAudioDiagnostics = GetPrivateProfileIntW(
+        L"Diagnostics", L"DeepAudioDiagnostics", 0, modulePath) == 1;
+    g_settings.frameTimingDiagnostics = GetPrivateProfileIntW(
+        L"Diagnostics", L"FrameTiming", 1, modulePath) == 1;
 }
+
+#include "PerformanceDiagnostics.inl"
+#include "AdaptiveSpawnPacing.inl"
 
 bool ComputeSha256(const wchar_t* path, std::string* output) noexcept {
     if (path == nullptr || output == nullptr) return false;
@@ -448,6 +535,87 @@ bool ComputeSha256(const wchar_t* path, std::string* output) noexcept {
     for (std::size_t index = 0; index < digest.size(); ++index)
         sprintf_s(text + index * 2, 3, "%02X", digest[index]);
     *output = text;
+    return true;
+}
+
+bool WriteGuardedCodeByte(const std::uintptr_t absolute,
+                          const std::uint8_t expected,
+                          const std::uint8_t replacement) noexcept {
+    auto* address = reinterpret_cast<std::uint8_t*>(Address(absolute));
+    std::uint8_t observed = 0;
+    if (!SafeRead(address, &observed) || observed != expected) return false;
+    DWORD previous = 0;
+    if (!VirtualProtect(address, 1, PAGE_EXECUTE_READWRITE, &previous))
+        return false;
+    *address = replacement;
+    const bool flushed =
+        FlushInstructionCache(GetCurrentProcess(), address, 1) != FALSE;
+    DWORD unused = 0;
+    const bool restored = VirtualProtect(address, 1, previous, &unused) != FALSE;
+    if (!flushed || !restored) {
+        DWORD writable = 0;
+        if (VirtualProtect(address, 1, PAGE_EXECUTE_READWRITE, &writable)) {
+            *address = expected;
+            FlushInstructionCache(GetCurrentProcess(), address, 1);
+            VirtualProtect(address, 1, writable, &unused);
+        }
+        return false;
+    }
+    return true;
+}
+
+bool InstallVehicleBudgetPatch() noexcept {
+    const auto budget = g_settings.totalVehicleBudget;
+    if (budget == kNativeVehicleBudget) {
+        Log(LogLevel::Info,
+            "VEHICLE_BUDGET native=%u configured=%u patched=0 preservation=1",
+            kNativeVehicleBudget, budget);
+        return true;
+    }
+    struct Site {
+        std::uintptr_t address;
+        std::uint8_t expected;
+        std::uint8_t replacement;
+    };
+    const std::array<Site, 5> sites{{
+        {kVehicleBudgetCompareImmediate, kNativeVehicleBudget, budget},
+        {kVehicleBudgetSubtractDisplacement,
+         static_cast<std::uint8_t>(-static_cast<int>(kNativeVehicleBudget)),
+         static_cast<std::uint8_t>(-static_cast<int>(budget))},
+        {kVehicleEvictionReserveImmediate, kNativeVehicleBudget, budget},
+        {kTrafficCapacityCompareImmediate, kNativeVehicleBudget, budget},
+        {kTrafficPopulationAddImmediate, kNativeVehicleBudget, budget},
+    }};
+    for (const auto& site : sites) {
+        std::uint8_t observed = 0;
+        if (!SafeRead(reinterpret_cast<void*>(Address(site.address)), &observed) ||
+            observed != site.expected) {
+            Log(LogLevel::Error,
+                "VEHICLE_BUDGET_REJECTED site=%08X expected=%02X observed=%02X",
+                static_cast<unsigned>(site.address), site.expected, observed);
+            return false;
+        }
+    }
+    std::size_t applied = 0;
+    for (; applied < sites.size(); ++applied) {
+        const auto& site = sites[applied];
+        if (!WriteGuardedCodeByte(site.address, site.expected,
+                                  site.replacement))
+            break;
+    }
+    if (applied != sites.size()) {
+        while (applied-- > 0) {
+            const auto& site = sites[applied];
+            WriteGuardedCodeByte(site.address, site.replacement,
+                                 site.expected);
+        }
+        Log(LogLevel::Error,
+            "VEHICLE_BUDGET_REJECTED reason=write-failed rollback=attempted");
+        return false;
+    }
+    Log(LogLevel::Info,
+        "VEHICLE_BUDGET native=%u configured=%u patched=1 sites=%u preservation=1 initialStage=1",
+        kNativeVehicleBudget, budget, static_cast<unsigned>(sites.size()));
     return true;
 }
 
@@ -497,19 +665,18 @@ bool ReadVehicle(void* vehicle, VehicleSnapshot* output) noexcept {
     }
 }
 
+#include "NativeVehicleList.inl"
 void EnumerateVehicles(std::vector<VehicleSnapshot>& result) {
     result.clear(); // Keep the allocation reserved at installation.
     std::uint32_t count = 0;
-    void** data = nullptr;
-    if (!SafeRead(reinterpret_cast<void*>(Address(kVehicleListCount)), &count) ||
-        !SafeRead(reinterpret_cast<void*>(Address(kVehicleListData)), &data) ||
-        data == nullptr || count > kMaximumVehicles)
-        return;
+    const void* const* data = nullptr;
+    if (!ReadNativeVehicleList(data,count)) return;
+    try {result.reserve(count);} catch (...) {return;}
     for (std::uint32_t index = 0; index < count; ++index) {
-        void* vehicle = nullptr;
+        const void* vehicle = nullptr;
         if (!SafeRead(data + index, &vehicle)) continue;
         VehicleSnapshot snapshot{};
-        if (ReadVehicle(vehicle, &snapshot)) result.push_back(snapshot);
+        if (ReadVehicle(const_cast<void*>(vehicle), &snapshot)) result.push_back(snapshot);
     }
 }
 
@@ -616,6 +783,75 @@ bool IsManagedCacheVehicle(const void* vehicle) noexcept {
     return false;
 }
 
+bool IsExternalConstructionProtectedVehicle(const void* vehicle) noexcept {
+    if (vehicle == nullptr ||
+        !g_externalConstructionProtectionActive.load(std::memory_order_acquire))
+        return false;
+    const auto address = reinterpret_cast<std::uintptr_t>(vehicle);
+    AcquireSRWLockShared(&g_constructionSetLock);
+    const auto count = std::min<std::uint32_t>(
+        g_externalConstructionProtectedCount.load(std::memory_order_acquire),
+        static_cast<std::uint32_t>(g_externalConstructionProtectedVehicles.size()));
+    bool found=false;
+    for (std::uint32_t index = 0; index < count; ++index) {
+        if (g_externalConstructionProtectedVehicles[index] == address){found=true;break;}
+    }
+    ReleaseSRWLockShared(&g_constructionSetLock);
+    return found;
+}
+
+bool BeginConstructionProtection(const void* const* vehicles,
+                                 const unsigned count) noexcept {
+    if (count == 0 || !ReadablePointerArray(vehicles,count))
+        return false;
+    bool expected = false;
+    if (!g_externalConstructionProtectionClaimed.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel,
+            std::memory_order_acquire))
+        return false;
+    AcquireSRWLockExclusive(&g_constructionSetLock);
+    bool prepared=true;
+    try {g_externalConstructionProtectedVehicles.resize(count);} catch (...) {prepared=false;}
+    for (unsigned index = 0; prepared&&index < count; ++index) {
+        const void* vehicle=nullptr;
+        if(!SafeRead(vehicles+index,&vehicle)||!vehicle){prepared=false;break;}
+        g_externalConstructionProtectedVehicles[index]=reinterpret_cast<std::uintptr_t>(vehicle);
+    }
+    if(!prepared){
+        g_externalConstructionProtectedCount.store(0,std::memory_order_release);
+        g_externalConstructionProtectionClaimed.store(false,std::memory_order_release);
+        ReleaseSRWLockExclusive(&g_constructionSetLock);
+        return false;
+    }
+    g_externalConstructionProtectionStartVotes.store(
+        g_externalConstructionProtectedVotes.load(std::memory_order_relaxed),
+        std::memory_order_relaxed);
+    g_externalConstructionProtectedCount.store(count, std::memory_order_release);
+    g_externalConstructionProtectionActive.store(true,
+                                                  std::memory_order_release);
+    ReleaseSRWLockExclusive(&g_constructionSetLock);
+    return true;
+}
+
+void EndConstructionProtection(const char* scope) noexcept {
+    AcquireSRWLockExclusive(&g_constructionSetLock);
+    g_externalConstructionProtectionActive.store(false,
+                                                  std::memory_order_release);
+    const auto protectedCount =
+        g_externalConstructionProtectedCount.load(std::memory_order_acquire);
+    const auto votes = g_externalConstructionProtectedVotes.load(
+                           std::memory_order_relaxed) -
+        g_externalConstructionProtectionStartVotes.load(
+            std::memory_order_relaxed);
+    g_externalConstructionProtectedCount.store(0, std::memory_order_release);
+    g_externalConstructionProtectionClaimed.store(false,
+                                                   std::memory_order_release);
+    ReleaseSRWLockExclusive(&g_constructionSetLock);
+    Log(LogLevel::Info,
+        "Construction protection ended scope=%s protected=%u votes=%u",
+        scope != nullptr ? scope : "unknown", protectedCount, votes);
+}
+
 std::uint32_t __fastcall CacheQueryHook(void* cache, void*,
                                       const void* vehicle,
                                       const void* askingCache) noexcept {
@@ -623,6 +859,11 @@ std::uint32_t __fastcall CacheQueryHook(void* cache, void*,
     // any component/destructor work. Want=0 removes this candidate from the
     // eviction list at 0x6879EE. All unrelated votes retain native behavior.
     const std::uint32_t original = g_originalCacheQuery(cache, vehicle, askingCache);
+    if (IsExternalConstructionProtectedVehicle(vehicle)) {
+        g_externalConstructionProtectedVotes.fetch_add(1,
+                                                        std::memory_order_relaxed);
+        return 0; // eVehicleCacheResult::Want
+    }
     if (!IsManagedCacheVehicle(vehicle)) return original;
     g_cacheWanted.fetch_add(1, std::memory_order_relaxed);
     if (original != 0) g_cacheChangedVotes.fetch_add(1, std::memory_order_relaxed);
@@ -1089,8 +1330,18 @@ bool ActivateNativeRacer(void* vehicle,
     }
 }
 
-bool SpawnAtAnchor(const VehicleSnapshot& anchor,bool* candidateWait) {
+#include "PopulationBridge.inl"
+#include "ConstructionLiveSet.inl"
+#include "SpawnPreparation.inl"
+RefillPacing g_refillPacing;
+ULONGLONG g_refillDiagnosticAt=0;
+
+bool SpawnAtAnchor(const VehicleSnapshot& anchor,const VehicleSnapshot& player,bool* candidateWait) {
     *candidateWait=false;
+    const auto pendingTransaction=g_populationTransaction;
+    const bool awaitingVacancy=pendingTransaction.Awaiting(GetTickCount64());
+    g_populationTransaction.Reset();
+    PopulationAttemptScope populationScope;
     NFSPluginSDK::MW05::WRoadNav* anchorRoad = nullptr;
     if (!GetTrafficRoad(anchor.pointer, &anchorRoad)) return false;
     void* anchorSimable=GetSimablePointer(anchor.pointer);
@@ -1100,30 +1351,117 @@ bool SpawnAtAnchor(const VehicleSnapshot& anchor,bool* candidateWait) {
         return false;
     }
     if (!g_appearanceAvailable) return false;
+    const auto prepared=AdvanceSpawnPreparation(player.vehicleKey,GetTickCount64(),
+        [](CareerPerformancePlan* plan){return SelectPreparedSpawnVehicle(plan,ReadCareerPerformancePlan);},
+        [](const RankedVehicle& car){
+            g_preparedCustomization.emplace();
+            return MakeAppearance(car,&*g_preparedCustomization);
+        });
+    if(prepared!=SpawnPreparationResult::Ready) {
+        *candidateWait=prepared!=SpawnPreparationResult::Failed;return false;
+    }
+    if(!g_preparedCustomization) {ResetSpawnPreparation();*candidateWait=true;return false;}
+    const std::uint32_t vehicleKey=g_spawnPreparation.vehicleKey;
+    const char* preset=g_spawnPreparation.model.c_str();
+    auto& customization=*g_preparedCustomization;
+    // Career state is not cached admission. Re-read this selected model just
+    // before allocation (no player/global customization writes).
+    const auto finalStart=PerformanceNow();
     CareerPerformancePlan performancePlan{};
-    const auto* selectedCar = SelectPreparedSpawnVehicle(&performancePlan,ReadCareerPerformancePlan);
-    if (!selectedCar) { *candidateWait=true;return false; }
-    const std::uint32_t vehicleKey = selectedCar->installed->key;
-    const char* preset = selectedCar->installed->model;
-    NFSPluginSDK::MW05::FECustomizationRecord customization;
-    if (!MakeAppearance(*selectedCar, &customization)) return false;
-    WriteCareerPerformancePlan(vehicleKey,performancePlan,&customization);
+    const auto eligibility=ReadCareerPerformancePlan(vehicleKey,&performancePlan);
+    if(eligibility==PerformanceEligibility::Ready)
+        WriteCareerPerformancePlan(vehicleKey,performancePlan,&customization);
+    RecordPerformance(PerfStage::SpawnFinalize,finalStart,PerformanceNow());
+    if(eligibility!=PerformanceEligibility::Ready) {
+        ResetSpawnPreparation();*candidateWait=true;return false;
+    }
     void* rawStatus = nullptr;
     if (!SafeRead(reinterpret_cast<void*>(Address(kRaceStatus)), &rawStatus) ||
         rawStatus == nullptr)
         return false;
 
+    nfsmw_population::Status population;
+    // Preparation has succeeded. Reserve one immediately needed slot only.
+    const auto access=PopulationCapacity(population,1);
+    if(DeferForNativeHeadroom(access,population)) {*candidateWait=true;return false;}
+    if(access==PopulationAccess::Full||access==PopulationAccess::Unsafe||
+       (access==PopulationAccess::Legacy&&g_vehicleScratch.size()>=kObservedRacerConstructionLiveCeiling)) {
+        *candidateWait=true;
+        Log(LogLevel::Info,"SPAWN_DEFERRED reason=population-capacity access=%u live=%u limit=%u free=%u reserved=%u",
+            static_cast<unsigned>(access),population.live,population.limit,population.freeSlots,population.reserved);
+        if(access==PopulationAccess::Full&&population.live==population.limit) {
+            if(awaitingVacancy) {
+                // Do not retire a second car while native removal is pending.
+                g_populationTransaction=pendingTransaction;
+                g_spawnTimer=g_settings.spawnIntervalSeconds;
+            } else if(ReclaimOneTraffic(player,anchor)) {
+                g_populationTransaction.Begin(GetTickCount64());
+                g_spawnTimer=g_settings.spawnIntervalSeconds;
+            }
+        }
+        return false;
+    }
     const auto nativeDirection = ToUMath(anchor.heading);
     const auto nativePosition = ToUMath(anchor.position);
+    auto& protectedVehicles=g_constructionScratch;
+    unsigned protectedCount=0;
+    if(!CaptureConstructionLiveSet(protectedVehicles,protectedCount)||
+       !ConstructionContains(protectedVehicles,protectedCount,anchor.pointer)||
+       !AnchorGenerationMatches(anchor,anchorSimable)||
+       (access==PopulationAccess::Legacy&&protectedCount>=kObservedRacerConstructionLiveCeiling)||
+       (access==PopulationAccess::Ready&&protectedCount!=population.live)) {
+        *candidateWait=true;
+        Log(LogLevel::Info,"SPAWN_DEFERRED reason=construction-live-set-changed fresh=%u frame=%u provider=%u construction=0",
+            protectedCount,unsigned(g_vehicleScratch.size()),population.live);return false;
+    }
+    if(protectedCount!=g_vehicleScratch.size())
+        Log(LogLevel::Info,"CONSTRUCTION_LIVE_SET frame=%u fresh=%u source=native-after-retirement staleFrameIgnored=1",
+            unsigned(g_vehicleScratch.size()),protectedCount);
+    const void* pendingVehicle=nullptr;
+    const auto lifecycle=ValidateConstructionLifecycles(protectedVehicles,protectedCount,&pendingVehicle);
+    if(lifecycle!=ConstructionLifecycle::Ready){
+        *candidateWait=true;
+        Log(LogLevel::Info,"SPAWN_DEFERRED reason=%s vehicle=%p fresh=%u construction=0 reservation=release battleUpdate=continue",
+            lifecycle==ConstructionLifecycle::RetirementPending?"native-retirement-pending":"invalid-native-lifecycle",
+            pendingVehicle,protectedCount);
+        return false;
+    }
+    if (protectedCount == 0 ||
+        !BeginConstructionProtection(protectedVehicles.data(),
+                                     static_cast<unsigned>(protectedCount))) {
+        Log(LogLevel::Error,
+            "SPAWN_REJECTED stage=construction-protection-begin protected=%u",
+            static_cast<unsigned>(protectedCount));
+        return false;
+    }
+    const auto constructStart = PerformanceNow();
     auto* created = ConstructTrafficSeed(rawStatus, vehicleKey, nativeDirection,
                                          nativePosition, &customization);
+    RecordPerformance(PerfStage::Construct, constructStart, PerformanceNow());
+    EndConstructionProtection("native-racer");
     // Target 0x68934D allocates 0x198 bytes; 0x689361 copies all 0x66 DWORDs.
-    // PVehicle owns its copy. No pointer to this stack record survives Construct.
+    // PVehicle owns its copy. No pointer to the prepared record survives Construct.
     if (created == nullptr) return false;
     auto* vehicle = static_cast<NFSPluginSDK::MW05::IVehicle*>(created);
-    if (!IsExpectedVehicle(vehicle) ||
-        !VerifySpawnPerformance(created, customization) ||
-        !ActivateNativeRacer(vehicle, anchorSeed)) {
+    if (ConstructionContains(protectedVehicles,protectedCount,vehicle)) {
+        Log(LogLevel::Error,
+            "NATIVE_REPLACEMENT_GUARD_TRIPPED vehicle=%08X anchor=%08X protected=%u action=fault-without-release",
+            static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(vehicle)),
+            static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(anchor.pointer)),
+            static_cast<unsigned>(protectedCount));
+        g_faulted = true;
+        return false;
+    }
+    if (!AnchorGenerationMatches(anchor, anchorSimable)) {
+        KillVehicle(vehicle, "anchor generation changed after protected construction");
+        return false;
+    }
+    const auto activateStart = PerformanceNow();
+    const bool activated = IsExpectedVehicle(vehicle) &&
+        VerifySpawnPerformance(created, customization, vehicleKey) &&
+        ActivateNativeRacer(vehicle, anchorSeed);
+    RecordPerformance(PerfStage::Activate, activateStart, PerformanceNow());
+    if (!activated) {
         KillVehicle(vehicle, "native action activation failed");
         return false;
     }
@@ -1132,12 +1470,6 @@ bool SpawnAtAnchor(const VehicleSnapshot& anchor,bool* candidateWait) {
         KillVehicle(vehicle, "spawn identity unavailable");
         return false;
     }
-    if (AnchorGenerationMatches(anchor,anchorSimable) &&
-        !KillVehicle(anchor.pointer, "replaced by native free-roam racer")) {
-        KillVehicle(vehicle, "anchor replacement aborted");
-        return false;
-    }
-
     // A PVehicle storage address can be recycled.  Remove stale generations
     // before the new key becomes authoritative.
     for (std::size_t index = g_racers.size(); index-- > 0;) {
@@ -1168,13 +1500,14 @@ bool SpawnAtAnchor(const VehicleSnapshot& anchor,bool* candidateWait) {
     ProtectManagedVehicle(markerSlot, g_racers.back().pointer,
                           g_racers.back().simable, g_racers.back().vehicleKey);
     Log(LogLevel::Info,
-        "SPAWNED_NATIVE_RACER preset=%s modelKey=%08X key=%08X vehicle=%08X anchor=%08X anchorSpeed=%.1fkmh population=%u/%u",
+        "SPAWNED_NATIVE_RACER preset=%s modelKey=%08X key=%08X vehicle=%08X anchor=%08X anchorSpeed=%.1fkmh population=%u/%u replacement=0 protectedExisting=%u",
         preset, vehicleKey, identity.key,
         static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(vehicle)),
         static_cast<unsigned int>(
             reinterpret_cast<std::uintptr_t>(anchor.pointer)),
         anchor.speed * 3.6f, static_cast<unsigned int>(g_racers.size()),
-        static_cast<unsigned int>(g_settings.maximumRacers));
+        static_cast<unsigned int>(g_settings.maximumRacers),
+        static_cast<unsigned>(protectedCount));
     return true;
 }
 
@@ -1275,36 +1608,100 @@ void RefreshManaged(const VehicleSnapshot& player,
 
 void Replenish(const VehicleSnapshot& player,
                const std::vector<VehicleSnapshot>& vehicles, const float dt) {
+    g_refillPacing.Tick(dt,g_racers.size(),g_settings.maximumRacers);
     AdvanceVehicleCatalog();
-    if (!EnsureVehiclePalette(player)) return;
+    if (!EnsureVehiclePalette(player)) {ResetSpawnPreparation();ReleasePopulationReservation();return;}
+    const auto now=GetTickCount64();
+    if(g_racers.size()>=g_settings.maximumRacers) {ResetSpawnPreparation();ReleasePopulationReservation();return;}
+    if(g_populationTransaction.Expired(now)) {
+        ResetSpawnPreparation();
+        ReleasePopulationReservation();g_spawnTimer=0.0f;
+        Log(LogLevel::Info,"POPULATION_RESERVATION_END reason=vacancy-timeout trafficAdmissionRestored=1");return;
+    }
     if (g_spawnFailureBackoffSeconds > 0.0f) {
+        ResetSpawnPreparation();
+        ReleasePopulationReservation();
         g_spawnFailureBackoffSeconds =
             std::max(0.0f, g_spawnFailureBackoffSeconds - dt);
         return;
     }
-    if (g_racers.size() >= g_settings.maximumRacers) return;
     g_spawnTimer += dt;
-    if (g_spawnTimer < g_settings.spawnIntervalSeconds) return;
+    const bool pendingVacancy=g_populationTransaction.Awaiting(now);
+    if(!pendingVacancy&&!g_spawnPreparation.continuation&&(g_spawnTimer<std::min(1.0f,g_settings.spawnIntervalSeconds)||
+       !g_refillPacing.Ready(g_settings.spawnIntervalSeconds,g_racers.size(),g_settings.maximumRacers)))return;
+    // Never prolong a one-slot lease or break the three-sample preparation chain.
+    if(DeferAdaptiveSpawn(pendingVacancy||g_spawnPreparation.phase!=SpawnPreparationPhase::Empty,now)){
+        ReleasePopulationReservation();g_spawnTimer=0.0f;return;
+    }
+    // Fresh capability/capacity only when a spawn search is due, or while the
+    // bounded one-slot transaction is pending. Never reuse it for construction:
+    // SpawnAtAnchor must still reserve/check again immediately before allocation.
+    nfsmw_population::Status population;
+    const auto access=PopulationCapacity(population,g_populationTransaction.Requested(now));
+    if (access==PopulationAccess::Unsafe||
+        (access==PopulationAccess::Legacy&&vehicles.size() >= kObservedRacerConstructionLiveCeiling)) {
+        ResetSpawnPreparation();
+        ReleasePopulationReservation();
+        g_spawnTimer = 0.0f;
+        g_spawnFailureBackoffSeconds = 5.0f;
+        Log(LogLevel::Info,
+            "SPAWN_DEFERRED reason=unverified-population-capacity live=%u fallbackCeiling=%u action=no-construction access=%u providerLimit=%u providerLive=%u free=%u reserved=%u capabilities=%X",
+            static_cast<unsigned int>(vehicles.size()),
+            static_cast<unsigned int>(kObservedRacerConstructionLiveCeiling),unsigned(access),
+            population.limit,population.live,population.freeSlots,population.reserved,population.capabilities);
+        return;
+    }
     g_spawnTimer = 0.0f;
+    if(DeferForNativeHeadroom(access,population)) {
+        ResetSpawnPreparation();ReleasePopulationReservation();return;
+    }
 
     const VehicleSnapshot* selected = nullptr;
     std::size_t candidateCount = 0;
-    for (const auto& vehicle : vehicles) {
+    int bestRank=99;
+    unsigned moving=0,inRange=0,roadRejected=0;
+    g_anchorSearch.Clear();
+    for (std::size_t index=0;index<vehicles.size();++index) {
+        const auto& vehicle=vehicles[index];
         if (vehicle.driverClass != kDriverTraffic ||
-            vehicle.speed < g_settings.anchorMinimumSpeedMps)
+            vehicle.speed < g_settings.anchorMinimumSpeedMps ||
+            IsAdvancedCivilianVehicle(vehicle.pointer))
             continue;
+        ++moving;
         const float distance = Distance(player.position, vehicle.position);
-        if (distance < g_settings.anchorMinimumMeters ||
-            distance > g_settings.anchorMaximumMeters ||
-            HorizontalHeadingDot(player.heading, vehicle.heading) <
-                g_settings.anchorHeadingDotMinimum)
-            continue;
-        // Reservoir sampling: uniform choice without allocating or shuffling.
-        ++candidateCount;
-        if (std::uniform_int_distribution<std::size_t>(1, candidateCount)(g_random) == 1)
-            selected = &vehicle;
+        if(distance>=g_settings.anchorMinimumMeters&&distance<=g_settings.anchorMaximumMeters)++inRange;
+        const Vec3 offset{vehicle.position.x-player.position.x,0.0f,vehicle.position.z-player.position.z};
+        const int rank=RefillAnchorRank(distance,HorizontalHeadingDot(player.heading,offset),
+            HorizontalHeadingDot(player.heading,vehicle.heading),g_settings.anchorMinimumMeters,
+            g_settings.anchorMaximumMeters,g_settings.anchorHeadingDotMinimum,g_refillPacing.shortage,
+            vehicle.onScreenTime<=0.0f&&vehicle.offScreenTime>=1.0f);
+        g_anchorSearch.Add(index,rank);
     }
-    if (selected == nullptr) return;
+    const auto anchorResult=g_anchorSearch.Select(g_random,[&](std::size_t index) {
+        const auto& vehicle=vehicles[index];
+        NFSPluginSDK::MW05::WRoadNav* road=nullptr;AnchorRoadSeed seed;
+        return GetTrafficRoad(vehicle.pointer,&road)&&CaptureAnchorRoadSeed(road,seed);
+    });
+    roadRejected=static_cast<unsigned>(anchorResult.rejected);
+    if(anchorResult.index!=AnchorSearch::none) {
+        selected=&vehicles[anchorResult.index];bestRank=anchorResult.rank;
+        candidateCount=anchorResult.candidates; // Coarse tier, not all road-validated.
+    }
+    if (selected == nullptr) {
+        ResetSpawnPreparation();
+        ReleasePopulationReservation();
+        if(now>=g_refillDiagnosticAt) {
+            g_refillDiagnosticAt=now+5000;
+            Log(LogLevel::Info,"SPAWN_DEFERRED reason=no-eligible-moving-anchor live=%u population=%u/%u moving=%u inRange=%u roadRejected=%u shortageSeconds=%.1f reserved=0 trafficAdmissionUnrestricted=1 searchHz=1",
+                static_cast<unsigned>(vehicles.size()),static_cast<unsigned>(g_racers.size()),static_cast<unsigned>(g_settings.maximumRacers),moving,inRange,roadRejected,g_refillPacing.shortage);
+        }
+        return;
+    }
+    if(g_populationTransaction.Awaiting(now)&&access==PopulationAccess::Full) {
+        // Poll for the ONE requested native retirement; no new preparation,
+        // reservation deadline renewal or second reclaim during this wait.
+        g_spawnTimer=g_settings.spawnIntervalSeconds;return;
+    }
     Log(LogLevel::Info,
         "SPAWN_ATTEMPT_BEGIN candidateCount=%u population=%u/%u failurePolicy=retry-with-bounded-backoff consecutiveFailures=%u",
         static_cast<unsigned int>(candidateCount),
@@ -1312,11 +1709,19 @@ void Replenish(const VehicleSnapshot& player,
         static_cast<unsigned int>(g_settings.maximumRacers),
         g_consecutiveSpawnFailures);
     bool candidateWait=false;
-    if (!SpawnAtAnchor(*selected,&candidateWait)) {
+    if(now>=g_refillDiagnosticAt) {
+        g_refillDiagnosticAt=now+5000;
+        Log(LogLevel::Info,"REFILL_POLICY rank=%d interval=%.1f population=%u/%u anchorDistance=%.1f shortageSeconds=%.1f coarseCandidates=%u roadProbes=%u roadRejected=%u",
+            bestRank,RefillPacing::Interval(g_settings.spawnIntervalSeconds,g_racers.size(),g_settings.maximumRacers),
+            unsigned(g_racers.size()),unsigned(g_settings.maximumRacers),Distance(player.position,selected->position),g_refillPacing.shortage,
+            unsigned(candidateCount),unsigned(anchorResult.probes),roadRejected);
+    }
+    if (!SpawnAtAnchor(*selected,player,&candidateWait)) {
         if(candidateWait) {
             // No allocation attempted: this is not an engine spawn failure.
             g_consecutiveSpawnFailures=0;g_spawnFailureBackoffSeconds=0.0f;return;
         }
+        ResetSpawnPreparation();
         ++g_consecutiveSpawnFailures;
         const std::uint32_t shift =
             std::min<std::uint32_t>(g_consecutiveSpawnFailures, 4);
@@ -1326,25 +1731,27 @@ void Replenish(const VehicleSnapshot& player,
             "Population spawn failed; retry deferred %.1fs consecutiveFailures=%u permanentLatch=0",
             g_spawnFailureBackoffSeconds, g_consecutiveSpawnFailures);
     } else {
+        ResetSpawnPreparation();
+        g_refillPacing.Spawned();
         g_consecutiveSpawnFailures = 0;
         g_spawnFailureBackoffSeconds = 0.0f;
     }
 }
 
-void LogTelemetry(const VehicleSnapshot& player,
-                  const std::vector<VehicleSnapshot>& vehicles,
-                  const float dt) {
-    g_telemetryTimer += dt;
-    if (g_telemetryTimer < g_settings.telemetryIntervalSeconds) return;
-    g_telemetryTimer = 0.0f;
+// Keep the native SEH probe in a separate function from the RAII batch scope.
+void LogTelemetryRows(const VehicleSnapshot& player,
+                      const std::vector<VehicleSnapshot>& vehicles) {
     std::size_t visibleMarkers = 0;
+    LogAudioPoolHealth();
     for (const auto& marker : g_markers)
         if (marker.visible) ++visibleMarkers;
-    Log(LogLevel::Info, "TELEMETRY managed=%u/%u markers=%u vehicles=%u",
+    Log(LogLevel::Info, "TELEMETRY managed=%u/%u markers=%u vehicles=%u populationIdleCalls=%llu populationReserveCalls=%llu populationReleaseCalls=%llu populationReleaseSkipped=%llu",
         static_cast<unsigned int>(g_racers.size()),
         static_cast<unsigned int>(g_settings.maximumRacers),
         static_cast<unsigned int>(visibleMarkers),
-        static_cast<unsigned int>(vehicles.size()));
+        static_cast<unsigned int>(vehicles.size()),
+        g_populationApiCounters.idle,g_populationApiCounters.reserve,
+        g_populationApiCounters.release,g_populationApiCounters.releaseSkipped);
     const auto wanted = g_cacheWanted.exchange(0, std::memory_order_acq_rel);
     const auto changed = g_cacheChangedVotes.exchange(0, std::memory_order_acq_rel);
     if (wanted != 0) {
@@ -1414,6 +1821,8 @@ void LogTelemetry(const VehicleSnapshot& player,
     }
 }
 
+#include "TelemetryDispatch.inl"
+
 template<typename T> bool AudioRead(const void* address,T* output) noexcept {
     return AudioRead(reinterpret_cast<std::uintptr_t>(address),0,output);
 }
@@ -1428,8 +1837,14 @@ bool QueueEncounterBattle(const VehicleSnapshot&,const VehicleSnapshot&) noexcep
 #include "EncounterArmedRacers.inl"
 
 void ClearWorld(const bool killManaged) noexcept {
+    ResetSpawnPreparation();
+    g_refillPacing={};g_refillDiagnosticAt=0;
+    ReleasePopulationReservation();
     g_pendingEncounterMessage={};ResetEncounterArmedRacers();
     ResetSpawnEligibility();
+    g_performanceRetry={};
+    ResetVehicleVarietyExpansion();
+    ResetAdaptiveSpawnPacing();
     ResetBackgroundPolice();
     // No cached vehicle dereference after the world has gone away.
     EndEncounterBattle(false,true);
@@ -1445,7 +1860,9 @@ void ClearWorld(const bool killManaged) noexcept {
     g_spawnTimer = 0.0f;
     g_telemetryTimer = 0.0f;
     g_managementPending = 0.0f;
+    ResetAudioPoolHealth();
     g_vehicleScratch.clear();
+    g_anchorSearch.Clear();
     g_consecutiveSpawnFailures = 0;
     g_spawnFailureBackoffSeconds = 0.0f;
     g_cacheWanted.store(0, std::memory_order_relaxed);
@@ -1471,6 +1888,7 @@ void Update() {
         return;
     }
     if (!g_worldReady) {
+        LockAudioExpansionForWorld();
         ClearWorld(false);
         g_worldReady = true;
         g_streamRetentionEnabled.store(true, std::memory_order_release);
@@ -1485,7 +1903,9 @@ void Update() {
     }
     float dt = 0.0f;
     if (!ConsumeManagementTick(elapsed, &g_managementPending, &dt)) return;
+    auto phase = PerformanceNow();
     EnumerateVehicles(g_vehicleScratch);
+    PerformanceCheckpoint(PerfStage::Enumerate, &phase);
     const auto& vehicles = g_vehicleScratch;
     const auto player = std::find_if(
         vehicles.begin(), vehicles.end(), [](const VehicleSnapshot& item) {
@@ -1498,22 +1918,28 @@ void Update() {
     }
     UpdateEncounterBattle(*player, vehicles, dt);
     FlushEncounterMessage();
+    PerformanceCheckpoint(PerfStage::Battle, &phase);
     RefreshManaged(*player, vehicles, dt);
+    PerformanceCheckpoint(PerfStage::Refresh, &phase);
     Replenish(*player, vehicles, dt);
+    PerformanceCheckpoint(PerfStage::Replenish, &phase);
     UpdateEncounterCandidate(*player, vehicles, dt);
+    PerformanceCheckpoint(PerfStage::Candidate, &phase);
     UpdateBackgroundPolice(*player, vehicles, dt);
     UpdateEncounterArmedRacers(*player,vehicles,dt);
+    PerformanceCheckpoint(PerfStage::Police, &phase);
     LogTelemetry(*player, vehicles, dt);
+    PerformanceCheckpoint(PerfStage::Telemetry, &phase);
 }
 
 #include "FrameTimingDiagnostics.inl"
 
 int __cdecl DisplayFrameHook() {
-    const auto start = GetTickCount64();
+    const auto start = FrameClockNow();
     const int result = g_originalDisplayFrame();
-    const auto nativeEnd = GetTickCount64();
+    const auto nativeEnd = FrameClockNow();
     SafeAudioDiagnosticTick();
-    const auto audioEnd = GetTickCount64();
+    const auto audioEnd = FrameClockNow();
     __try {
         Update();
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -1522,9 +1948,23 @@ int __cdecl DisplayFrameHook() {
             "Frame update exception code=%08X; runtime latched disabled",
             static_cast<unsigned int>(GetExceptionCode()));
     }
-    ObserveFrameTiming(start, nativeEnd, audioEnd, GetTickCount64(), g_worldReady);
+    const auto updateEnd = FrameClockNow();
+    if (const auto externalTick =
+            g_externalPopulationTick.load(std::memory_order_acquire)) {
+        __try {
+            externalTick();
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            g_externalPopulationTick.store(nullptr, std::memory_order_release);
+            Log(LogLevel::Error,
+                "External population tick faulted code=%08X; callback detached",
+                static_cast<unsigned int>(GetExceptionCode()));
+        }
+    }
+    ObserveFrameTiming(start, nativeEnd, audioEnd, updateEnd, FrameClockNow(), g_worldReady);
     return result;
 }
+
+#include "SolidLifetime.inl"
 
 bool ValidateSurface(std::string* error) noexcept {
     if (g_base != kPreferredBase) {
@@ -1553,6 +1993,8 @@ bool ValidateSurface(std::string* error) noexcept {
         0x6A, 0xFF, 0x64, 0xA1, 0x00, 0x00, 0x00, 0x00};
     static constexpr std::array<std::uint8_t, 8> killSimableBytes = {
         0x51, 0x56, 0x8B, 0xF1, 0x57, 0x8D, 0x46, 0xD4};
+    static constexpr std::array<std::uint8_t, 4> retirementFlagBytes = {
+        0xC6, 0x46, 0x1C, 0x01};
     static constexpr std::array<std::uint8_t, 8> deactivateVehicleBytes = {
         0x8B, 0x01, 0x6A, 0x00, 0xFF, 0x50, 0x34, 0xC3};
     static constexpr std::array<std::uint8_t, 10> cacheQueryBytes = {
@@ -1565,6 +2007,8 @@ bool ValidateSurface(std::string* error) noexcept {
                "AIVehicle::SetGoal") ||
         !guard(kKillSimable, killSimableBytes.data(), killSimableBytes.size(),
                "KillSimable") ||
+        !guard(kKillSimable+0x0E, retirementFlagBytes.data(), retirementFlagBytes.size(),
+               "KillSimable retirement flag") ||
         !guard(kDeactivateVehicle, deactivateVehicleBytes.data(),
                deactivateVehicleBytes.size(), "PVehicle::Deactivate") ||
         !guard(kRaceStatusCacheQuery, cacheQueryBytes.data(),
@@ -1612,6 +2056,25 @@ bool ValidateSurface(std::string* error) noexcept {
 }
 
 }  // namespace
+
+extern "C" __declspec(dllexport) int __cdecl
+NFRR_RegisterPopulationTickV1(void(__cdecl* tick)()) noexcept {
+    g_externalPopulationTick.store(tick, std::memory_order_release);
+    Log(LogLevel::Info, "External population tick registered active=%u",
+        tick != nullptr ? 1u : 0u);
+    return 1;
+}
+
+extern "C" __declspec(dllexport) int __cdecl
+NFRR_BeginVehicleConstructionProtectionV1(
+    const void* const* vehicles, const unsigned count) noexcept {
+    return BeginConstructionProtection(vehicles, count) ? 1 : 0;
+}
+
+extern "C" __declspec(dllexport) void __cdecl
+NFRR_EndVehicleConstructionProtectionV1() noexcept {
+    EndConstructionProtection("external");
+}
 
 bool StartupNoticeAllowed() noexcept {
     unsigned flow=0;
@@ -1675,19 +2138,31 @@ bool InstallRuntime() noexcept {
         Log(LogLevel::Error, "Variation asset or Unlimiter guard rejected; no population hook installed");
         return false;
     }
+    if(!ValidateSolidLifetimeSurface()) {
+        Log(LogLevel::Error,"SOLID_LIFETIME byte guard rejected; no population hook installed");
+        return false;
+    }
+    if (!InstallVehicleBudgetPatch()) {
+        Log(LogLevel::Error,
+            "Vehicle budget extension failed; no population hook installed");
+        return false;
+    }
     LARGE_INTEGER seed{};
     try { PrepareCatalogPersistence(); }
     catch(...) { Log(LogLevel::Warning,"CALIBRATION_CACHE_DISABLED initialization=failed"); }
-    g_audioDiagnosticsEnabled = ValidateAudioDiagnosticSurface();
+    g_audioDiagnosticsEnabled = g_settings.deepAudioDiagnostics && ValidateAudioDiagnosticSurface();
     g_audioDetailEnabled = g_audioDiagnosticsEnabled && ValidateAudioDetailSurface();
     Log(LogLevel::Info, "AUDIO_DETAIL enabled=%u writes=0 calls=0 registryLimit=128",
         static_cast<unsigned>(g_audioDetailEnabled));
+    Log(LogLevel::Info, "DIAGNOSTIC_POLICY deepAudio=%u frameTiming=%u timingIntervalSeconds=30 restartRequired=1 audioPlaybackUnaffected=1 lbRequired=0",
+        static_cast<unsigned>(g_settings.deepAudioDiagnostics), static_cast<unsigned>(g_settings.frameTimingDiagnostics));
     Log(LogLevel::Info, "AUDIO_DIAGNOSTICS enabled=%u exactAudioSurface=%u writes=0 calls=0 intervalMs=5000 maxRows=32 populationUnaffectedOnMismatch=1",
         static_cast<unsigned>(g_audioDiagnosticsEnabled),
         static_cast<unsigned>(g_audioDiagnosticsEnabled));
     g_racers.reserve(kMaximumRacersLimit);
-    g_vehicleScratch.reserve(kMaximumVehicles);
-    g_audioVehicles.reserve(kMaximumVehicles);
+    g_vehicleScratch.reserve(kInitialVehicleReserve);
+    g_anchorSearch.Reserve(kInitialVehicleReserve);
+    g_audioVehicles.reserve(kInitialVehicleReserve);
     g_catalog.reserve(1024);
     g_palette.reserve(5);
     g_vehicleBag.reserve(5);
@@ -1718,6 +2193,10 @@ bool InstallRuntime() noexcept {
         MH_Uninitialize();
         return false;
     }
+    if(MH_CreateHook(reinterpret_cast<void*>(Address(kSolidUnload)),&SolidUnloadHook,
+                     reinterpret_cast<void**>(&g_originalSolidUnload))!=MH_OK) {
+        MH_Uninitialize();return false;
+    }
     if (MH_EnableHook(MH_ALL_HOOKS) != MH_OK) {
         MH_DisableHook(MH_ALL_HOOKS);
         MH_RemoveHook(reinterpret_cast<void*>(Address(kRaceStatusCacheQuery)));
@@ -1725,6 +2204,7 @@ bool InstallRuntime() noexcept {
         MH_Uninitialize();
         return false;
     }
+    Log(LogLevel::Info,"SOLID_LIFETIME ACTIVE nativeUnload=00507460 exactPointerAliases=1 modelBlacklist=0 lbRequired=0");
     // Optional observation hook is enabled separately: failure must not stop population.
     if (CreateAudioFlowHook()) {
         g_audioFlowEnabled = MH_EnableHook(reinterpret_cast<void*>(Address(kAudioFlowUpdate))) == MH_OK;
@@ -1745,8 +2225,10 @@ bool InstallRuntime() noexcept {
     InstallCustomSpeedHook();
     InstallEncounterSignalHooks();
     Log(LogLevel::Info,
-        "Runtime installed mode=alpha.59-startup-update-notice max=%u populationRadius=%.1fm markerRadius=%.1fm managementMaxHz=20 nativeAITickUnthrottled=1 failurePolicy=retry-with-bounded-backoff cacheWantRetention=1 managedKillRetention=0 managedDeactivateRetention=0 destructorRetention=0 battleRouteAdapterStableHz=1 customManagementHz=4 customDriveHook=%u customSpeedHook=%u passTransitionImmediate=1 directSteeringWrites=0 borrowedAnchorRoadAcrossAllocation=0",
+        "Runtime installed mode=release-0.1.0 max=%u totalVehicleBudget=%u racerConstructionLiveCeiling=%u populationRadius=%.1fm markerRadius=%.1fm managementMaxHz=20 nativeAITickUnthrottled=1 failurePolicy=retry-with-bounded-backoff cacheWantRetention=1 constructionProtection=all-live replacement=0 managedKillRetention=0 managedDeactivateRetention=0 destructorRetention=0 battleRouteAdapterStableHz=1 customManagementHz=4 customDriveHook=%u customSpeedHook=%u passTransitionImmediate=1 directSteeringWrites=0 borrowedAnchorRoadAcrossAllocation=0 nativeStartTimeoutMs=1000 limitBreakerRequired=0 populationApi=1 idleReserved=0 constructionReserved=1 vacancyTimeoutMs=1500 nativeStartOwnedRoadReseed=1 anchorSearchHz=1 deficitCadence=adaptive frontAnchorPriority=1 constructionLiveSet=native-after-retirement nativeRetirementBarrier=1 providerLimitPolicy=capabilities-and-consistency dynamicVehicleStorage=1",
         static_cast<unsigned int>(g_settings.maximumRacers),
+        static_cast<unsigned>(g_settings.totalVehicleBudget),
+        static_cast<unsigned>(kObservedRacerConstructionLiveCeiling),
         g_settings.populationRadiusMeters, g_settings.markerRadiusMeters,unsigned(g_customDriveInstalled),unsigned(g_customSpeedInstalled));
     return true;
 }

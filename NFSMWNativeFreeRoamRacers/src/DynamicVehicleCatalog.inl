@@ -17,6 +17,7 @@ std::deque<OwnedCatalogRow> g_ownedCatalog;
 std::uintptr_t g_catalogDatabase=0,g_catalogClass=0,g_catalogTypeTable=0;
 std::uint32_t g_catalogNext=0,g_catalogExpected=0;
 bool g_catalogStarted=false,g_catalogFaulted=false;
+std::uint64_t g_catalogGeneration=0;
 constexpr unsigned kCatalogCollectionLimit=8192,kCatalogModelLimit=1024;
 std::array<std::uint32_t,kCatalogCollectionLimit> g_catalogVisited{};
 
@@ -41,6 +42,7 @@ bool PreferCatalogKey(std::uint32_t proposed,std::uint32_t existing,std::uint32_
 }
 
 void ResetDynamicCatalog() {
+    ++g_catalogGeneration;
     // Only called on the management thread. Racer records own a string copy.
     g_catalog.clear();g_palette.clear();g_vehicleBag.clear();g_palettePlayerKey=0;
     g_ownedCatalog.clear();g_catalogCursor=0;g_catalogFinished=false;

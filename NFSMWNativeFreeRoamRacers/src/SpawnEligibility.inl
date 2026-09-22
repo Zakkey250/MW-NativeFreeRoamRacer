@@ -1,24 +1,27 @@
 // Eligibility is career/session state, NOT persistent calibration metadata.
-// Re-evaluate the existing <=5-model palette before each spawn, retaining the
+// Re-evaluate the negotiated <=6-model palette before each spawn, retaining the
 // audio model budget and price/performance neighborhood. No car-name blacklist.
 bool g_eligibilityLogged=false;
-std::array<std::uint32_t,5> g_eligibilityKeys{};
-std::array<PerformanceEligibility,5> g_eligibilityStates{};
+std::array<std::uint32_t,kExpandedVehicleModelLimit> g_eligibilityKeys{};
+std::array<PerformanceEligibility,kExpandedVehicleModelLimit> g_eligibilityStates{};
 
 void ResetSpawnEligibility() noexcept { g_eligibilityLogged=false; }
 
 template<class ReadPlan>
-const RankedVehicle* SelectPreparedSpawnVehicle(CareerPerformancePlan* plan,ReadPlan readPlan) {
-    if(!plan||g_palette.empty()||g_palette.size()>5) return nullptr;
-    std::array<std::uint32_t,5> keys{};
-    std::array<PerformanceEligibility,5> states{};
-    std::array<CareerPerformancePlan,5> plans{};
-    std::array<std::size_t,5> eligible{};std::size_t count=0;
+const RankedVehicle* SelectPreparedSpawnVehicle(CareerPerformancePlan* plan,ReadPlan readPlan,
+                                              std::uint64_t now=GetTickCount64()) {
+    if(!plan||g_palette.empty()||g_palette.size()>VehicleModelLimit()) return nullptr;
+    std::array<std::uint32_t,kExpandedVehicleModelLimit> keys{};
+    std::array<PerformanceEligibility,kExpandedVehicleModelLimit> states{};
+    std::array<CareerPerformancePlan,kExpandedVehicleModelLimit> plans{};
+    std::array<std::size_t,kExpandedVehicleModelLimit> eligible{};std::size_t count=0;
     for(std::size_t slot=0;slot<g_palette.size();++slot) {
         const auto index=g_palette[slot];
         if(index>=g_catalog.size()||!g_catalog[index].installed) {g_vehicleBag.clear();return nullptr;}
         keys[slot]=g_catalog[index].installed->key;
-        states[slot]=readPlan(keys[slot],&plans[slot]);
+        if(std::find(keys.begin(),keys.begin()+slot,keys[slot])!=keys.begin()+slot){g_vehicleBag.clear();return nullptr;}
+        states[slot]=g_performanceRetry.Cooling(keys[slot],now)
+            ?PerformanceEligibility::CoolingDown:readPlan(keys[slot],&plans[slot]);
         if(states[slot]==PerformanceEligibility::Ready) eligible[count++]=index;
     }
     if(!g_eligibilityLogged||keys!=g_eligibilityKeys||states!=g_eligibilityStates) {
@@ -27,6 +30,9 @@ const RankedVehicle* SelectPreparedSpawnVehicle(CareerPerformancePlan* plan,Read
         for(std::size_t slot=0;slot<g_palette.size();++slot)
             if(states[slot]==PerformanceEligibility::NoNitrous)
                 Log(LogLevel::Info,"SPAWN_CANDIDATE_FILTERED model=%s key=%08X reason=nos-unsupported-career-unlocked allocation=0",
+                    g_catalog[g_palette[slot]].installed->model,keys[slot]);
+            else if(states[slot]==PerformanceEligibility::CoolingDown)
+                Log(LogLevel::Info,"SPAWN_CANDIDATE_FILTERED model=%s key=%08X reason=performance-readback-cooldown allocation=0 permanentExclusion=0",
                     g_catalog[g_palette[slot]].installed->model,keys[slot]);
         if(!count) Log(LogLevel::Info,"SPAWN_WAIT reason=no-compatible-candidate retry=normal-interval permanentExclusion=0");
         g_eligibilityLogged=true;g_eligibilityKeys=keys;g_eligibilityStates=states;

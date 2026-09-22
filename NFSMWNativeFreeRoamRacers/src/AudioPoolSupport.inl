@@ -3,6 +3,7 @@
 constexpr std::uintptr_t kAudioPoolCountSite=0x004F3030;
 constexpr std::uintptr_t kAudioRacerPoolGlobal=0x00911F6C;
 constexpr std::uintptr_t kAudioRacerPoolVtable=0x00898D24;
+#include "AudioExpansion.inl"
 static_assert(offsetof(NFSPluginSDK::MW05::GRaceStatus,mRaceParms)==0x1968);
 static_assert(offsetof(NFSPluginSDK::MW05::GRaceStatus,mPlayMode)==0x1960);
 void* g_originalAudioPoolCount=nullptr;
@@ -39,7 +40,7 @@ AudioPoolContext ReadAudioPoolContext(std::uintptr_t pool) noexcept {
 }
 enum class AudioPoolReason : unsigned {Adjusted,Disabled,NativeNonzero,Unreadable,WrongPool,EventContext,NotEmpty,Budget,Counts};
 int SelectAudioPoolCount(int nativeCount,std::uintptr_t pool,const AudioPoolContext& c,
-                         bool enabled,unsigned requested,AudioPoolReason* reason) noexcept {
+                         bool enabled,unsigned requested,AudioPoolReason* reason,unsigned ceiling=4) noexcept {
     *reason=AudioPoolReason::Disabled;
     if(!enabled || !requested) return nativeCount;
     *reason=AudioPoolReason::NativeNonzero;
@@ -57,12 +58,12 @@ int SelectAudioPoolCount(int nativeCount,std::uintptr_t pool,const AudioPoolCont
     *reason=AudioPoolReason::NotEmpty;
     if(c.count || c.head) return nativeCount;
     *reason=AudioPoolReason::Budget;
-    // 4E5C80's no-event branch reserves four native audio budget units; never alter it.
-    if(c.budget<4 || c.budget>64 || c.alternate) return nativeCount;
+    // Ceiling six is negotiated only at the guarded no-event budget preparation.
+    if((ceiling!=4&&ceiling!=6)||c.budget<ceiling || c.budget>64 || c.alternate) return nativeCount;
     *reason=AudioPoolReason::Counts;
     if(c.countA || c.countB) return nativeCount;
     *reason=AudioPoolReason::Adjusted;
-    return static_cast<int>(std::min(requested,4u));
+    return static_cast<int>(std::min(requested,ceiling));
 }
 std::atomic<unsigned> g_audioPoolAttempts{0},g_audioPoolAdjusted{0},g_audioPoolReason{0};
 std::atomic<int> g_audioPoolNativeCount{0},g_audioPoolChosenCount{0};
@@ -72,8 +73,9 @@ std::atomic<std::uintptr_t> g_audioPoolLastRaceStatus{0},g_audioPoolLastFrontend
 int __cdecl ObserveAndSelectAudioPoolCount(int nativeCount,std::uintptr_t pool) noexcept {
     const auto c=ReadAudioPoolContext(pool);
     AudioPoolReason reason;
-    const unsigned requested=std::min(g_settings.freeRoamAudioSlots,static_cast<unsigned>(g_settings.maximumRacers));
-    const auto selected=SelectAudioPoolCount(nativeCount,pool,c,g_settings.enabled,requested,&reason);
+    const unsigned ceiling=g_audioSlotCeiling.load();
+    const unsigned requested=std::min(ceiling==6?6u:g_settings.freeRoamAudioSlots,static_cast<unsigned>(g_settings.maximumRacers));
+    const auto selected=SelectAudioPoolCount(nativeCount,pool,c,g_settings.enabled,requested,&reason,ceiling);
     g_audioPoolAttempts.fetch_add(1,std::memory_order_relaxed);
     if(selected!=nativeCount) g_audioPoolAdjusted.fetch_add(1,std::memory_order_relaxed);
     g_audioPoolNativeCount.store(nativeCount,std::memory_order_relaxed);
@@ -133,7 +135,9 @@ void InstallAudioPoolHook() noexcept {
     }
     Log(LogLevel::Info,"AUDIO_POOL_SUPPORT enabled=%u requestedSlots=%u countSite=004F3030 policy=empty-native-event-lookup-budgeted nativeMaximum=4 extraNativeCalls=0 raceListWrites=0",
         static_cast<unsigned>(g_audioPoolHookEnabled),g_settings.freeRoamAudioSlots);
+    if(g_audioPoolHookEnabled)InstallAudioExpansionHook();
 }
+#include "AudioPoolHealth.inl"
 struct AudioPoolMembership {int matched=-1;unsigned visited=0,active=0;const char* status="unknown";};
 AudioPoolMembership ReadAudioPoolMembership(const AudioPoolContext& c,std::uintptr_t object) noexcept {
     AudioPoolMembership r;

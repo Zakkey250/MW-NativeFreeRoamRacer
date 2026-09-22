@@ -6,4 +6,4 @@ Version: 3.11.3. Author: Niels Lohmann and contributors.
 
 Upstream: https://github.com/nlohmann/json
 
-Single-header SHA-256: `5B4F1BD1A2855A7F9A1EB88B743C8530D08D10AE35FC1FC06EB5C4B134336BAE`.
+Local source used: the already-vendored toml11 test dependency under the workspace's gta4-rtx research checkout. No GTA game files or code were copied.

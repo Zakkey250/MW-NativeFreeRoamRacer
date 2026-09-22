@@ -1,57 +1,47 @@
-# MW-NativeFreeRoamRacer
+# MW Native Free Roam Racer — v0.1.0
 
-Roaming AI racers and one-on-one encounter battles for **Need for Speed Most Wanted (2005)**. Includes the source of the optional **NFSU2 Encounter Audio Extractor**.
+Roaming AI racers and Underground 2-style encounter battles for **Need for Speed Most Wanted (2005)**. NFRR is the main mod; **NFSMW Limit Breaker v0.1.0 is included as an optional, recommended companion**. NFRR also works without LB, within normal vehicle/audio limits.
 
-フリーロームを走るAIレーサーと、追走から始まる1対1のエンカウンターバトルを追加します。別添の音声抽出アプリのソースも収録しています。
+ロックポートに自由走行レーサーとエンカウンターバトルを追加します。主体はNFRR、LBは任意の付属MODとして同梱・併用推奨です。LBを外しても通常の車両・音声制限内で動作します。
 
-## Download and instructions / 配布・説明書
+## Download / 説明書
 
-- [Releases / 配布ZIP](https://github.com/Zakkey250/MW-NativeFreeRoamRacer/releases)
-- [日本語説明書](NFSMWNativeFreeRoamRacers/docs/GUIDE_JA.md) / [English guide](NFSMWNativeFreeRoamRacers/docs/GUIDE_EN.md)
-- [Audio extractor / 音声抽出アプリ](NFSU2EncounterAudioExtractor/README.md)
-- [Build / ビルド](BUILD.md) / [Validation and limits / 検証範囲](VALIDATION.md)
-- [Development blog (Japanese) / 開発ブログ：Native Free Roam Racerができるまで](NFSMWNativeFreeRoamRacers/docs/development/STORY_JA.md)
+- [v0.1.0 release](https://github.com/Zakkey250/MW-NativeFreeRoamRacer/releases/tag/v0.1.0)
+- [English guide](NFSMWNativeFreeRoamRacers/docs/GUIDE_EN.md) / [日本語説明書](NFSMWNativeFreeRoamRacers/docs/GUIDE_JA.md)
+- [Changes since Alpha.59 / パッチノート](PATCH_NOTES_v0.1.0.md)
+- [Validation / 検証範囲](VALIDATION.md) / [Build / ビルド](BUILD.md)
+- [LB companion source and guide](NFSMWLimitBreaker/README_EN.md) / [LB日本語](NFSMWLimitBreaker/README_JA.md)
+- [Optional voice extractor / 音声抽出器](NFSU2EncounterAudioExtractor/README.md)
+- [Development story / 開発記事](NFSMWNativeFreeRoamRacers/docs/development/STORY_JA.md)
 
 ## Features / 機能
 
-- Independent roaming racers; default 6, configurable 1–15. Current distribution defaults: population radius 600 m, minimap radius 200 m.
-- Price/performance-based vehicle selection, career-limited upgrades and random appearance. Up to 5 model types including the player's model; 4 free-roam engine-audio slots.
-- Automatic vehicle metadata calibration, persisted until related game data changes.
-- Follow a racer and use the game's configured Join Event action. The leader chooses the route; a 300 m gap decides the battle. Stable AI pays 1,000 cash; Custom AI pays 300–3,000 by career Blacklist rank.
-- Switch between Stable and Custom AI in the INI. Custom AI follows the player's recorded direction and attacks to overtake within 15 m; it is the shipping default.
-- Lead gauge, challenge notification, trailing-player GPS, optional 2D encounter voices and background police detection.
+- Independent racers: default 6, configurable 1–15; management radius 600 m, markers 200 m.
+- Price/performance-based car selection, career-aware tuning, random appearance and persistent catalog calibration.
+- Use the configured Join Event action while following a rival. The leader chooses the route; a 300 m gap decides the result.
+- Custom AI follows your trajectory's general direction and attacks to overtake nearby; Stable AI remains selectable. Custom rewards range from 300 to 3,000 by Blacklist rank; Stable pays 1,000.
+- Battle HUD, GPS assistance, background police activity, optional 2D UG2 voices and notification-only update checking.
+- Recommended LB expands the total vehicle budget to 32, allowing more ordinary traffic alongside racers and police for more technical races. Actual density is conditional, not guaranteed.
+- Optional LB audio support requests six engine slots and enables six model types only after verified allocation; otherwise normal limits apply. Integration uses API capabilities, not a fixed LB version.
 
-- 独立走行AIは既定6台、1～15台に設定可能。現在の既定値は生成範囲600 m、マーカー表示200 mです。
-- 価格・性能の近い車種を選び、キャリア進行に従った性能チューンとランダム外見を適用。自車を含む最大5車種、フリーローム用エンジン音4枠。
-- 車両情報を自動構築・保存し、関連ゲームデータが変わるまで再利用。
-- 追走中にゲーム内の「イベント参加」で開始。先頭車がルートを選び、300 m差で決着。報酬はStable AIで1,000固定、Custom AIでBLに応じて300～3,000。
-- INIでStableとCustom AIを切替。Custom AIはプレイヤーの軌跡方向を追走し、15m以内で追い抜きへ移行します。配布既定値はCustom AIです。
-- リードゲージ、開始通知、後追い時のGPS、任意の2D音声、背景での警察追跡。
+既定6台（1～15台設定可）、管理600m・マーカー200m。価格・性能に応じた車種選択、キャリア準拠の性能チューン、外見抽選とキャリブレーションを搭載。追走中に「イベント参加」で挑戦し、300m差で決着します。Custom AIとStableを選択可能。LB併用時は最大32台の共用枠で一般交通・警察を残しやすくなり、よりテクニカルなレースになります。LB能力・実割り当て確認時のみ音声と車種を拡張し、利用できない場合は通常制限へ戻ります。
 
 ## Compatibility / 対応範囲
 
-**alpha.59**, Windows, ASI loader, compatible Visual C++ x86 runtime. Exact target: NFSPatcher English 1.3 + LAA `speed.exe`, 6,029,312 bytes, SHA-256:
+Windows, ASI loader and Visual C++ x86 runtime. Exact NFRR target: NFSPatcher English 1.3 + LAA `speed.exe`, 6,029,312 bytes, SHA-256:
 
 ```text
 B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06
 ```
 
-The filename alone does not establish compatibility. Vehicle discovery no longer requires a particular add-on roster, but gameplay has been validated on the development installation only; vanilla and other car/mod combinations remain unverified. Native AI may take poor routes or become stuck. This remains an alpha release.
+The filename alone is insufficient. No specific car pack is required; arbitrary modded assets and hook combinations are not guaranteed safe. Native navigation can still struggle with junctions and obstacles. More traffic can increase load. See the guides and validation notes for limits, installation and settings. Preserve existing INIs and saves when updating; optional integration providers are not prerequisites.
 
-ファイル名が同じだけでは互換性を保証しません。特定の追加車種一覧への依存は除去しましたが、実走確認は開発環境のみです。バニラ・他の車両/MOD構成は未検証です。純正AIの経路選択や障害物で詰まる問題は残ります。アルファ版として配布します。
+ファイル名だけで互換性は判断できません。特定車種パックは不要ですが、すべての追加車両・MOD構成を保証しません。分岐・障害物でのAIの迷いや交通増加による負荷は残ります。更新時は既存INIとセーブを保管してください。
 
-Game files, ASI loader, car assets, saves, generated caches and extracted audio are **not** included. Optional voices must be extracted from an owned NFS Underground 2 copy. Japanese extraction has been tested; other supported language-bank layouts are structurally supported but not fully runtime-validated.
+No game executable, car assets, saves, generated caches or extracted voices are included. The extractor is a separate no-decoder package; supply your own UG2 data and decoder as instructed. No weapon MOD is bundled. Existing optional integrations remain in NFRR.
 
-ゲーム本体・ローダー・車両素材・セーブ・生成キャッシュ・抽出音声は同梱しません。任意の音声は所有するUG2から抽出してください。日本語版の抽出を確認済み、他言語版は構造対応のみで全抽出経路は未検証です。
+ゲーム本体・車両素材・セーブ・キャッシュ・抽出音声は非同梱。抽出器はデコーダー別途配置版です。任意連携コードは維持し、武器MODは同梱しません。
 
-## Latest changes / 最新の変更
+## Rights / 利用条件
 
-See [alpha.59 patch notes](PATCH_NOTES_alpha59.md). Normal cruising now defaults to 60% of the native AI target speed, and challenges require a speed difference within ±10 km/h; both are configurable. Startup update notices check public GitHub metadata only, with no download or installation feature. Optional integrations remain optional and are not required to play.
-
-[alpha.59パッチノート](PATCH_NOTES_alpha59.md)を参照してください。通常巡航の目標速度は既定60％、開始時の速度差は既定±10km/h以内となり、いずれもINIで調整できます。起動時の更新通知はGitHubの公開情報のみ確認し、DL・自動導入は行いません。任意連携はゲームプレイの必須要件ではありません。
-
-## Source use / ソース利用条件
-
-Research, exchange of ideas and personal use (including local modifications/builds) are permitted. Redistribution and distribution of modified builds require prior express permission. See [LICENSE.md](LICENSE.md); third-party licenses and previously granted rights are preserved.
-
-研究・意見交換・個人利用（個人用の改変・ビルドを含む）は可能です。再配布および改変物のビルド配布には事前の明示的な許可が必要です。[利用条件](LICENSE.md)を確認してください。第三者ライセンスと過去に付与済みの権利は維持します。
+See [LICENSE.md](LICENSE.md): research, discussion and personal use are permitted; redistribution and distribution of modified builds require express permission. Third-party rights and previously granted licenses are preserved. Unofficial fan project; not affiliated with or endorsed by Electronic Arts.

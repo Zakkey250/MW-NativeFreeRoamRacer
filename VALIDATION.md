@@ -1,6 +1,18 @@
 # Validation / 検証範囲
 
-## alpha.59 (current)
+## v0.1.0 (current)
+
+- The release ASI SHA-256 is `BBEDCB6B19CBF4167C4203C5BA433E67E186D18C8CAC857BEE0F9D4C0FB939CD`. Gameplay code matches the accepted alpha.88 baseline; only the version and diagnostic mode label changed for release.
+- Release Win32 build and a clean build from the packaged source passed. Runtime/cache tests: 7,709 passed, 0 failed, 1 optional owned-voice skip; logging: 60 passed; update notice: 55 passed. The packaged source also passes all 7,709 runtime/cache checks.
+- The preceding alpha.88 gameplay session completed eight battles and 57 spawns, including ten CIVICFN2 spawns, without logged NFRR warnings/errors or captured access violations/dumps. Replenishment continued until exit. This is evidence from one development installation, not universal compatibility.
+- The shared-solid lifecycle hook was active, but no alias-detachment operation was recorded in that session. Actual repair execution under the problematic condition remains unproven. The earlier allocator CTD and shared-solid CTD are not assumed to share one cause; no claim of complete CTD prevention is made.
+- NFRR's 33 effective shipping INI settings match the tested setup. The included LB binary matches that installation. Optional LB/weapon capability paths are retained. LB-absent gameplay with the new stable artifact has not been independently documented; offline coverage is not a substitute for that test.
+- The stable package was installed for the user's pre-publication test with existing settings/saves/other mods preserved. The user subsequently authorized publication; no additional successful gameplay session is inferred solely from that authorization.
+- ZIP entries and their hashes were verified. No game assets, extracted voices, personal saves, generated car catalog, runtime logs or dumps are distributed. The extractor remains the unchanged v1.1.0 no-decoder package.
+
+正式版はalpha.88から版番号・診断表示のみ変更しています。ビルド、梱包ソースの再ビルド、本体7,709件・ログ60件・通知55件の試験を通過。直前の実走は8戦・57台生成で例外や補充停止なし。ただし共有参照解除の実作動は未観測で、CTDの完全解消や他環境全般を保証しません。新正式版のLBなし実走は独立した記録がありません。公開指示を新しい実走成功の証拠とは扱いません。
+
+## alpha.59 (previous release)
 
 - The distributed ASI matches the installed alpha.59 binary: SHA-256 `6867D86980E8585B8EED2724B062552C6B048DAF5C7367567AE9C1EAB66DC17B`. Runtime source and public source are compared byte-for-byte; build paths may change a rebuild's binary hash.
 - Release Win32 builds successfully. The core offline harness passes 1,396 checks, with 0 failures and one optional owned-voice check skipped. Update-notice tests pass 55 checks offline; live-metadata and standalone-dialog modes each pass 58 (including repeated base checks).
