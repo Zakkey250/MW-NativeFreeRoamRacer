@@ -3,7 +3,7 @@ param(
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
-$version='v0.1.0'
+$version='v0.1.1'
 & (Join-Path $PSScriptRoot 'Build.ps1') -GameExe $GameExe
 
 $dist=Join-Path $root 'dist'
@@ -51,8 +51,8 @@ $asiUnicode=[Text.Encoding]::Unicode.GetString($asiBytes)
 if($asiAscii -match '(?i)CarLoader' -or $asiUnicode -match '(?i)CarLoader'){
     throw 'Release ASI still contains rejected CarLoader implementation.'
 }
-if($asiUnicode -notmatch '0\.1\.0'){
-    throw 'Release ASI does not contain the v0.1.0 version string.'
+if($asiUnicode -notmatch '0\.1\.1'){
+    throw 'Release ASI does not contain the v0.1.1 version string.'
 }
 
 $manifestLines=Get-ChildItem -LiteralPath $stage -Recurse -File |

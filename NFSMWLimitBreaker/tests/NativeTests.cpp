@@ -135,7 +135,15 @@ int main() {
         "release logical limit remains 32");
     Check(kStorageCapacity - kReleaseLimit == 32,
         "32 containment slots remain above the release logical limit");
-    Check(kRelocatedVectors.size() == 14, "all fixed vectors included");
+    Check(kRelocatedVectors.size() == 15, "all fixed vectors including renderer included");
+    const auto& renderSpec=kRelocatedVectors[kCarRenderConnectionVectorIndex];
+    Check(renderSpec.object==0x009B37C8u && renderSpec.expectedVtable==0x008B51A8u,
+        "race-end render registry identity from crash dump");
+    Check(VectorDataAddress(renderSpec)==0x009B37CCu && VectorCountAddress(renderSpec)==0x009B37D4u,
+        "race-end native renderer follows relocated data pointer and count");
+    Check(!IsExpectedEmptyFixedVectorState(renderSpec,renderSpec.expectedVtable,renderSpec.object+16,20,30),
+        "never relocate already overflowing crash state");
+    Check(sizeof(StorageBlock)<=4096,"all fifteen guarded buffers fit allocation page");
     Check(kRelocatedVectors[kVehicleAudioVectorIndex].object == 0x00913DB0u,
         "vehicle audio vector address");
     Check(kRelocatedVectors[kActiveVehicleComponentVectorIndex].object == 0x00913E70u,
@@ -159,6 +167,19 @@ int main() {
         vectorStorage.guardAfter = kGuardAfter;
     }
     GuardedPointerStorage& primaryStorage = storage.vectors[0];
+    auto& renderStorage=storage.vectors[kCarRenderConnectionVectorIndex];
+    const auto renderData=reinterpret_cast<std::uintptr_t>(renderStorage.pointers.data());
+    for(unsigned cycle=0;cycle<100;++cycle) {
+        for(unsigned count=0;count<=32;++count) {
+            if(count) renderStorage.pointers[count-1]=0x10000u+(count-1)*0x100u;
+            Check(CheckInvariants(renderStorage,renderSpec.expectedVtable,renderSpec.expectedVtable,
+                renderData,renderData,32,32,count)==InvariantStatus::Ok,
+                "renderer event/free-roam 0..32 registry occupancy retains guards");
+        }
+        Check(renderStorage.pointers[20]==0x11400u && renderStorage.pointers[29]==0x11D00u,
+            "crash indices 20 and 29 are within owned renderer storage");
+        renderStorage.pointers.fill(0);
+    }
     const std::uintptr_t data =
         reinterpret_cast<std::uintptr_t>(primaryStorage.pointers.data());
     Check(CheckInvariants(primaryStorage, kExpectedVectorVtable, kExpectedVectorVtable,

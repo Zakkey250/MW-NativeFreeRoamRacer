@@ -1,14 +1,14 @@
-# MW Native Free Roam Racer — v0.1.0
+# MW Native Free Roam Racer — v0.1.1 Hotfix
 
-Roaming AI racers and Underground 2-style encounter battles for **Need for Speed Most Wanted (2005)**. NFRR is the main mod; **NFSMW Limit Breaker v0.1.0 is included as an optional, recommended companion**. NFRR also works without LB, within normal vehicle/audio limits.
+Roaming AI racers and Underground 2-style encounter battles for **Need for Speed Most Wanted (2005)**. NFRR is the main mod; **NFSMW Limit Breaker v0.1.1 is included as an optional, recommended companion**. NFRR also works without LB, within normal vehicle/audio limits.
 
 ロックポートに自由走行レーサーとエンカウンターバトルを追加します。主体はNFRR、LBは任意の付属MODとして同梱・併用推奨です。LBを外しても通常の車両・音声制限内で動作します。
 
 ## Download / 説明書
 
-- [v0.1.0 release](https://github.com/Zakkey250/MW-NativeFreeRoamRacer/releases/tag/v0.1.0)
+- [v0.1.1 Hotfix release](https://github.com/Zakkey250/MW-NativeFreeRoamRacer/releases/tag/v0.1.1)
 - [English guide](NFSMWNativeFreeRoamRacers/docs/GUIDE_EN.md) / [日本語説明書](NFSMWNativeFreeRoamRacers/docs/GUIDE_JA.md)
-- [Changes since Alpha.59 / パッチノート](PATCH_NOTES_v0.1.0.md)
+- [Changes since 0.1.0 / パッチノート](PATCH_NOTES_v0.1.1.md)
 - [Validation / 検証範囲](VALIDATION.md) / [Build / ビルド](BUILD.md)
 - [LB companion source and guide](NFSMWLimitBreaker/README_EN.md) / [LB日本語](NFSMWLimitBreaker/README_JA.md)
 - [Optional voice extractor / 音声抽出器](NFSU2EncounterAudioExtractor/README.md)

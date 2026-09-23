@@ -1,13 +1,15 @@
 # NFSMW Limit Breaker
 
-NFSMW Limit Breaker v0.1.0 Release は、Need for Speed: Most Wanted (2005) の車両上限を安全に20台から最大32台へ拡張する独立ASIです。10本の `PVehicle*` テーブル、AIターゲット用 `ISimable*` リスト、車両ごとの音声・物理・コンポーネント登録リストを64枠の別領域へ移し、関連する車両・交通量上限を一括して変更します。
+NFSMW Limit Breaker v0.1.1 Hotfix は、Need for Speed: Most Wanted (2005) の車両上限を安全に20台から最大32台へ拡張する独立ASIです。10本の `PVehicle*` テーブル、AIターゲット用 `ISimable*` リスト、車両ごとの音声・物理・コンポーネント登録リストを64枠の別領域へ移し、関連する車両・交通量上限を一括して変更します。
+
+0.1.1では車両描画接続リストも拡張し、20枠のまま残っていた領域の容量超過を修正しました。[Hotfixの変更点](RELEASE_NOTES_v0.1.1.md)を参照してください。
 
 ## 互換性と安全設計
 
 - 6,029,312バイトのNFSPatcher英語版1.3 EXE（通常版および4 GB/LAA化版）が対象です。
 - EXE全体のSHA-256と全パッチ箇所の元命令を確認してから変更します。
 - Unlimiter、Extra Options、Native Free Roam Racers、MW Advanced Civilian Vehiclesへのパッチや依存はありません。
-- 14本のリストそれぞれに64ポインタ分のプロセス寿命領域を確保します。リリース上限32台に対して32枠の上書き抑止余裕を残します。64台対応を意味するものではありません。
+- 15本のリストそれぞれに64ポインタ分のプロセス寿命領域を確保します。リリース上限32台に対して32枠の上書き抑止余裕を残します。64台対応を意味するものではありません。
 - 対象リストがすべて既知の型で、かつ空の時だけ一括して有効化します。競合や読み込み遅延があれば何も変更せず無効化します。
 - 移動後の各リストの型、データポインタ、容量、件数、カナリア、旧インライン領域を監視し、`scripts/NFSMWLimitBreaker.log` に記録します。
 
@@ -16,7 +18,7 @@ NFSMW Limit Breaker v0.1.0 Release は、Need for Speed: Most Wanted (2005) の�
 - NFSPatcher英語版1.3: `80774C2E5D619B4F120B48D4462896FD504C263399D203A238769CFFDE1D253C`
 - LAAフラグとPEチェックサムだけが異なる版: `B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06`
 
-## v0.1.0 Release
+## v0.1.1 Hotfix
 
 リリース版は実プレイで安定を確認した論理32台／物理64枠の車両機能と、任意・再起動必須・能力API交渉式の8 MiB音声領域拡張を収録します。INIで選べる車両上限は `20 / 24 / 28 / 32` のみで、配布推奨値は32です。CarLoader拡張コードと設定項目は収録しません。
 
@@ -42,7 +44,7 @@ NFSMW Limit Breaker v0.1.0 Release は、Need for Speed: Most Wanted (2005) の�
 
 `0.1.0-experimental.10-audio.2` は機能と8 MiB容量を変えず、追加音声診断だけを最適化します。音声領域の整合性確認を100 msごとから2秒ごとへ間引き、アロケータ残量ログも64 KiBではなく256 KiBの変化単位へ集約します。experimental.10由来の車両監視周期、32/64車両処理、能力API、音声割り当て動作は変更しません。
 
-`0.1.0-experimental.10-audio.2-carloader.1` はCarLoader領域拡張を調査した不採用版です。256 MiBを有効にした実走では約1秒規模のカクツキが発生し、同じASIのままCarLoaderだけを無効化したA/B試験で安定へ戻りました。この機能はv0.1.0 Releaseからコード・設定とも削除しています。
+`0.1.0-experimental.10-audio.2-carloader.1` はCarLoader領域拡張を調査した不採用版です。256 MiBを有効にした実走では約1秒規模のカクツキが発生し、同じASIのままCarLoaderだけを無効化したA/B試験で安定へ戻りました。この機能はv0.1.1 Hotfixからコード・設定とも削除しています。
 
 物理、警察、描画、ストリーミング、音声、第三者MODの生成処理がすべて20台超に対応するとはまだ主張しません。特にフリーロームのエンジン音声プールには別の上限があります。
 
@@ -53,3 +55,4 @@ NFSMW Limit Breaker v0.1.0 Release は、Need for Speed: Most Wanted (2005) の�
 `NFSMWLimitBreaker.asi` と `NFSMWLimitBreaker.ini` をゲームの `scripts` フォルダへコピーしてください。配布用の安定基準は論理32台／物理64枠、`MaxVehicles = 32` です。音声領域の独立機能を利用する場合だけ `[Audio] LBEngineAudioExpansion = 1` にして完全再起動してください。NFRRは能力APIを確認し、条件を満たさない場合は従来の音声枠へ安全にフォールバックします。
 
 静的検証や起動確認は、ゲームプレイ受け入れ試験の代わりにはなりません。破棄処理、セーフハウス遷移、レース、追跡、逮捕、フロントエンド復帰を確認してから、ゲームプレイ上安全と判断してください。
+

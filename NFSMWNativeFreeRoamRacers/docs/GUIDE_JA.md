@@ -1,8 +1,8 @@
-# MW Native Free Roam Racer — v0.1.0
+# MW Native Free Roam Racer — v0.1.1
 
 Need for Speed Most Wanted (2005) のロックポートに、自由走行するAIレーサーと一対一のエンカウンターバトルを追加します。
 
-本体はNFRRです。**NFSMW Limit Breaker（LB）v0.1.0を任意の付属MODとして同梱し、基本的には併用を推奨します。LBを外してもNFRRは動作します。**
+本体はNFRRです。**NFSMW Limit Breaker（LB）v0.1.1を任意の付属MODとして同梱し、基本的には併用を推奨します。LBを外してもNFRRは動作します。**
 
 ## LBを併用するメリット
 
@@ -76,6 +76,7 @@ Stableの勝利報酬は1,000固定。Custom AIはバトル開始時のBL順位�
 
 共有モデルの寿命管理と性能参照の検査を追加していますが、不正車両MOD全般を修復するものではありません。直近の公開前実走は安定していた一方、共有参照の実解除はその走行で記録されていないため、CTDの完全解消は断言しません。
 
-報告にはバージョン、EXEハッシュ、関連MODと車種、再現手順、NFRRログ（併用時はLBログも）を添えてください。ログの個人情報を確認してから共有してください。Alpha.59以降の変更は `PATCH_NOTES_v0.1.0.md`、LB詳細は `docs/NFSMWLimitBreaker/` を参照。
+報告にはバージョン、EXEハッシュ、関連MODと車種、再現手順、NFRRログ（併用時はLBログも）を添えてください。ログの個人情報を確認してから共有してください。Alpha.59以降の変更は `PATCH_NOTES_v0.1.1.md`、LB詳細は `docs/NFSMWLimitBreaker/` を参照。
 
 研究・意見交換・個人利用は `LICENSE.md` に従い可能です。再配布と改変物のビルド配布には許可が必要です。第三者のライセンスは維持されます。ゲーム資産・抽出音声は再配布しないでください。
+

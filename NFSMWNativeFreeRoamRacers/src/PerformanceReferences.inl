@@ -33,7 +33,9 @@ InvalidPerformanceModels g_invalidPerformanceModels;
 
 template<class ReadArray,class Resolve>
 bool ValidatePerformanceReferences(const CareerPerformancePlan& plan,ReadArray readArray,
-                                   Resolve resolve,PerformanceReferenceIssue* issue) {
+                                   Resolve resolve,PerformanceReferenceIssue* issue,unsigned* noOpMask=nullptr) {
+    if(noOpMask)*noOpMask=0;
+    unsigned candidates=0;
     for(unsigned type=0;type<7;++type) {
         *issue={type,plan.chosen[type],0,0,"bad-level"};
         if(plan.maximum[type]>6||plan.chosen[type]>plan.maximum[type])return false;
@@ -56,8 +58,24 @@ bool ValidatePerformanceReferences(const CareerPerformancePlan& plan,ReadArray r
             if(!ref.mCollectionKey)return false;
             if(!resolve(ref,issue))return false;
         }
+        // Full SetPercent (00677D2B..00677D4E) returns the top reference.
+        // SetPercent skips the level write when it equals the base (00678964).
+        // Only the proven two-entry/full-level case is normalized. Partial
+        // interpolation and three-entry arrays have different semantics.
+        // NOS remains mandatory and is never downgraded by this adaptation.
+        if(type!=6&&array.count==2&&plan.chosen[type]==plan.maximum[type]&&
+           array.refs[0].mClassKey==array.refs[1].mClassKey&&
+           array.refs[0].mCollectionKey==array.refs[1].mCollectionKey)
+            candidates|=1u<<type;
     }
+    if(noOpMask)*noOpMask=candidates;
     return true;
+}
+
+bool NormalizeNoOpPerformance(CareerPerformancePlan* plan,unsigned mask,unsigned type,unsigned stockLevel) noexcept {
+    if(type>=6||!(mask&(1u<<type))||stockLevel!=0||!plan->chosen[type]||
+       plan->chosen[type]!=plan->maximum[type])return false;
+    plan->chosen[type]=0;return true;
 }
 
 bool ReadPerformanceReferenceArray(NFSPluginSDK::MW05::Attrib::Instance* instance,unsigned type,
@@ -113,13 +131,20 @@ bool ResolvePerformanceReference(const NFSPluginSDK::MW05::Attrib::RefSpec& ref,
 }
 
 bool ValidateNativePerformanceReferences(std::uint32_t key,NFSPluginSDK::MW05::Attrib::Instance* instance,
-                                        const CareerPerformancePlan& plan) noexcept {
+                                        CareerPerformancePlan& plan) noexcept {
     PerformanceReferenceIssue issue{};
+    unsigned noOpMask=0;
     const bool valid=ValidatePerformanceReferences(plan,
         [instance](unsigned type,PerformanceReferenceArray* out,PerformanceReferenceIssue* problem){
-            return ReadPerformanceReferenceArray(instance,type,out,problem);},ResolvePerformanceReference,&issue);
+            return ReadPerformanceReferenceArray(instance,type,out,problem);},ResolvePerformanceReference,&issue,&noOpMask);
     if(!valid&&g_invalidPerformanceModels.Reject(key,g_catalogGeneration))
         Log(LogLevel::Warning,"PERFORMANCE_REFERENCE_REJECT key=%08X type=%u level=%u index=%u collection=%08X reason=%s generation=%llu allocation=0 autoRepair=0 cachedUntilCatalogChange=1",
             key,issue.type,issue.level,issue.index,issue.collection,issue.reason,g_catalogGeneration);
+    if(valid)for(unsigned type=0;type<6;++type)if(noOpMask&(1u<<type)) {
+        const auto stock=reinterpret_cast<unsigned(__cdecl*)(void*,unsigned)>(Address(0x00672D30))(instance,type);
+        const auto requested=plan.chosen[type];
+        if(NormalizeNoOpPerformance(&plan,noOpMask,type,stock))
+            Log(LogLevel::Info,"PERFORMANCE_NATIVE_NOOP key=%08X type=%u requested=%u effective=0 reason=identical-stock-top-reference strictReadback=1",key,type,requested);
+    }
     return valid;
 }

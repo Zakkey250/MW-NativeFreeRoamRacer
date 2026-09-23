@@ -41,7 +41,7 @@ bool HashCalibrationBytes(const void* data,std::size_t size,std::array<unsigned 
 }
 
 bool CalibrationIdentity(const std::vector<std::wstring>& paths,std::array<unsigned char,32>* identity) {
-    std::string signatures="NFR-calibration-v1:";signatures+=kExpectedExecutableSha256;
+    std::string signatures="NFR-calibration-v1:";signatures+=g_verifiedExecutableSha256;
     for(const auto& path:paths) {
         std::string hash;
         if(!ComputeSha256(path.c_str(),&hash)) return false;

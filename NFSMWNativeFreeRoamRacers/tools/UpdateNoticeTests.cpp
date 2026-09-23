@@ -1,5 +1,19 @@
 // Isolated x86 harness: no game process or installed files are accessed.
+#include <Windows.h>
+#include <shellapi.h>
+#include <atomic>
+#include <string>
+#include "ExecutableTargets.h"
+static std::atomic<unsigned> browserCalls{0};
+static std::wstring browserUrl;
+static HINSTANCE WINAPI TestShellExecuteW(HWND,LPCWSTR operation,LPCWSTR url,LPCWSTR parameters,LPCWSTR,int) {
+    if(operation&&std::wstring(operation)==L"open"&&url&&!parameters){browserUrl=url;++browserCalls;}
+    return reinterpret_cast<HINSTANCE>(33);
+}
+// Exercise the actual button dispatch without launching the user's browser.
+#define ShellExecuteW TestShellExecuteW
 #include "../src/UpdateNotice.cpp"
+#undef ShellExecuteW
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -13,6 +27,12 @@ int main(int argc,char** argv) {
     unsigned passed=0,failed=0;
     auto expect=[&](bool ok,const char* text){std::cout<<(ok?"PASS ":"FAIL ")<<text<<'\n';ok?++passed:++failed;};
     using nlohmann::json;
+    for(const auto& target:nfrr_target::targets){
+        expect(nfrr_target::Find(target.size,target.sha256)==&target,"exact executable pair accepted");
+        expect(!nfrr_target::Find(target.size+1,target.sha256),"wrong executable size rejected");
+        expect(!nfrr_target::Find(target.size,std::string(64,'0')),"unknown executable hash rejected");
+    }
+    expect(!nfrr_target::Find(nfrr_target::targets[0].size,nfrr_target::targets[1].sha256),"crossed target size/hash rejected");
     constexpr auto repo="Zakkey250/MW-NativeFreeRoamRacer";
     constexpr auto prefix="MW-NativeFreeRoamRacer-";
     auto row=[&](std::string tag,bool pre=true){return json{{"tag_name",tag},{"draft",false},{"prerelease",pre},
@@ -72,6 +92,36 @@ int main(int argc,char** argv) {
         expect(!FindUpdate(payload,native_freeroam::kVersion,repo,prefix),"current local build produces no false notice against live releases");
     }
     if(argc>1&&std::string_view(argv[1])=="--dialog") {
+        for(bool ja:{false,true}) {
+            const wchar_t* title=ja?L"NFR button test JA":L"NFR button test EN";
+            const wchar_t* label=ja?L"GitHubを開く":L"Open GitHub";
+            browserCalls=0;browserUrl.clear();
+            std::atomic<bool> labelled=false;
+            std::thread click([&]{
+                const auto deadline=GetTickCount64()+2000;
+                while(GetTickCount64()<deadline){
+                    HWND window=FindWindowW(L"#32770",title);DWORD pid=0;
+                    if(window)GetWindowThreadProcessId(window,&pid);
+                    if(pid==GetCurrentProcessId()&&GetWindowLongPtrW(window,DWLP_USER)){
+                        wchar_t value[64]{};GetDlgItemTextW(window,102,value,64);
+                        if(std::wstring(value)==label){
+                            labelled=true;
+                            SendMessageW(window,WM_COMMAND,MAKEWPARAM(102,BN_CLICKED),0);
+                            SendMessageW(window,WM_COMMAND,IDOK,0);return;
+                        }
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+            });
+            const bool shown=ShowSerializedNotice(GetModuleHandleW(nullptr),title,L"Test only; browser launch is mocked.",L"Close",nullptr,1000,2500,
+                native_freeroam::releasesUrl,label);
+            click.join();
+            expect(shown&&labelled,"localized GitHub button is present");
+            expect(browserCalls==1&&browserUrl==native_freeroam::releasesUrl,"explicit click opens fixed NFRR HTTPS release URL exactly once");
+        }
+        browserCalls=0;
+        expect(ShowSerializedNotice(GetModuleHandleW(nullptr),L"NFR no auto-open test",L"Test only.",L"Close",nullptr,1000,150,
+            native_freeroam::releasesUrl,L"Open GitHub")&&browserCalls==0,"display and timeout never open browser automatically");
         expect(ShowSerializedNotice(GetModuleHandleW(nullptr),L"NFR update test — 日本語",L"新しいバージョンが公開されています。\r\n現在: 0.1.0-alpha.59\r\n公開版: v0.1.0-alpha.60\r\nテスト表示です。ダウンロード・インストールは行いません。",L"閉じて続行",nullptr,1000,800),"Japanese Win32 dialog created and auto-closed");
         expect(ShowSerializedNotice(GetModuleHandleW(nullptr),L"NFR update test — English",L"A newer version is available.\r\nInstalled: 0.1.0-alpha.59\r\nAvailable: v0.1.0-alpha.60\r\nTest only. Nothing downloaded or installed.",L"Close and continue",nullptr,1000,800),"English Win32 dialog created and auto-closed");
         expect(!ShowSerializedNotice(GetModuleHandleW(nullptr),L"Forbidden",L"",L"",+[]() noexcept{return false;},100,100),"gameplay gate prevents dialog creation");

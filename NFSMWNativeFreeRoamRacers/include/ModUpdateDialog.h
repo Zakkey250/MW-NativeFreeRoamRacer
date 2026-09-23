@@ -2,6 +2,8 @@
 #include <Windows.h>
 #include <cstdint>
 #include <string>
+#include <shellapi.h>
+#pragma comment(lib,"shell32.lib")
 
 // Cross-ASI notification protocol v1. This file can be copied into another MOD;
 // no shared DLL, symbol hook, module discovery, or load-order dependency exists.
@@ -21,6 +23,8 @@ struct DialogContext {
     bool (*allowed)() noexcept;
     ULONGLONG deadline;
     bool created=false;
+    const wchar_t* url=nullptr;
+    const wchar_t* openLabel=nullptr;
 };
 inline INT_PTR CALLBACK UpdateDialog(HWND window,UINT message,WPARAM wp,LPARAM lp) {
     auto* context=reinterpret_cast<DialogContext*>(GetWindowLongPtrW(window,DWLP_USER));
@@ -28,6 +32,8 @@ inline INT_PTR CALLBACK UpdateDialog(HWND window,UINT message,WPARAM wp,LPARAM l
         context=reinterpret_cast<DialogContext*>(lp);SetWindowLongPtrW(window,DWLP_USER,lp);
         context->created=true;SetWindowTextW(window,context->title);
         SetDlgItemTextW(window,101,context->body);SetDlgItemTextW(window,IDOK,context->button);
+        ShowWindow(GetDlgItem(window,102),SW_HIDE);
+        if(context->url) {SetDlgItemTextW(window,102,context->openLabel);ShowWindow(GetDlgItem(window,102),SW_SHOW);}
         RECT rect{};GetWindowRect(window,&rect);
         MONITORINFO monitor{sizeof(monitor)};
         if(GetMonitorInfoW(MonitorFromWindow(GetForegroundWindow(),MONITOR_DEFAULTTOPRIMARY),&monitor))
@@ -35,6 +41,9 @@ inline INT_PTR CALLBACK UpdateDialog(HWND window,UINT message,WPARAM wp,LPARAM l
                 (monitor.rcWork.top+monitor.rcWork.bottom-(rect.bottom-rect.top))/2,0,0,SWP_NOSIZE);
         SetTimer(window,1,100,nullptr);
         return TRUE;
+    }
+    if(message==WM_COMMAND&&LOWORD(wp)==102&&context&&context->url) {
+        ShellExecuteW(window,L"open",context->url,nullptr,nullptr,SW_SHOWNORMAL);return TRUE;
     }
     if(message==WM_COMMAND&&(LOWORD(wp)==IDOK||LOWORD(wp)==IDCANCEL)) {EndDialog(window,LOWORD(wp));return TRUE;}
     if(message==WM_CLOSE){EndDialog(window,IDCANCEL);return TRUE;}
@@ -45,7 +54,8 @@ inline INT_PTR CALLBACK UpdateDialog(HWND window,UINT message,WPARAM wp,LPARAM l
 }
 inline bool ShowSerializedNotice(HMODULE module,const wchar_t* title,const wchar_t* body,
                                   const wchar_t* button,bool (*allowed)() noexcept,
-                                  DWORD queueMs=90000,DWORD visibleMs=60000) {
+                                  DWORD queueMs=90000,DWORD visibleMs=60000,
+                                  const wchar_t* url=nullptr,const wchar_t* openLabel=L"Open GitHub") {
     KernelHandle mutex;mutex.value=CreateMutexW(nullptr,FALSE,QueueName(GetCurrentProcessId()).c_str());
     if(!mutex.value)return false;
     const auto deadline=GetTickCount64()+queueMs;
@@ -65,7 +75,7 @@ inline bool ShowSerializedNotice(HMODULE module,const wchar_t* title,const wchar
     alignas(DWORD) WORD words[512]{};WORD* cursor=words;
     auto* dialog=reinterpret_cast<DLGTEMPLATE*>(cursor);
     dialog->style=WS_POPUP|WS_CAPTION|WS_SYSMENU|DS_MODALFRAME|DS_SETFONT;
-    dialog->cdit=2;dialog->cx=350;dialog->cy=154;
+    dialog->cdit=3;dialog->cx=350;dialog->cy=154;
     cursor+=sizeof(DLGTEMPLATE)/sizeof(WORD);
     auto word=[&](WORD v){*cursor++=v;};
     auto text=[&](const wchar_t* value){while(*value)word(static_cast<WORD>(*value++));word(0);};
@@ -78,7 +88,8 @@ inline bool ShowSerializedNotice(HMODULE module,const wchar_t* title,const wchar
     };
     item(SS_LEFT|SS_NOPREFIX,12,10,326,111,101,0x0082,L"");
     item(WS_TABSTOP|BS_DEFPUSHBUTTON,211,128,127,17,IDOK,0x0080,L"OK");
-    DialogContext context{title,body,button,allowed,GetTickCount64()+visibleMs};
+    item(WS_TABSTOP|BS_PUSHBUTTON,12,128,185,17,102,0x0080,L"Open GitHub");
+    DialogContext context{title,body,button,allowed,GetTickCount64()+visibleMs,false,url,openLabel};
     // No game-window owner: do not disable/reenter the game's startup thread.
     DialogBoxIndirectParamW(module,dialog,nullptr,UpdateDialog,reinterpret_cast<LPARAM>(&context));
     return context.created;

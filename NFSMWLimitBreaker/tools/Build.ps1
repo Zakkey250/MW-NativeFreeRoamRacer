@@ -3,8 +3,10 @@ param(
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
-$msbuild='C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
-if(-not (Test-Path -LiteralPath $msbuild)){throw 'Visual Studio 2022 MSBuild was not found.'}
+$vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+$install=& $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath
+if(-not $install){throw 'Visual Studio build tools were not found.'}
+$msbuild=Join-Path $install 'MSBuild/Current/Bin/MSBuild.exe'
 & (Join-Path $PSScriptRoot 'Verify-Static.ps1') -GameExe $GameExe
 & $msbuild (Join-Path $root 'NFSMWLimitBreaker.vcxproj') /p:Configuration=Release /p:Platform=Win32 /v:minimal /nologo
 if($LASTEXITCODE){throw 'ASI build failed.'}

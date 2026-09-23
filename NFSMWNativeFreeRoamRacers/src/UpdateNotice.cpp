@@ -13,6 +13,8 @@
 namespace native_freeroam { namespace {
 constexpr char repository[]="Zakkey250/MW-NativeFreeRoamRacer";
 constexpr char assetPrefix[]="MW-NativeFreeRoamRacer-";
+// Fixed trusted destination; never execute a URL supplied by release metadata.
+constexpr wchar_t releasesUrl[]=L"https://github.com/Zakkey250/MW-NativeFreeRoamRacer/releases";
 constexpr wchar_t apiPath[]=L"/repos/Zakkey250/MW-NativeFreeRoamRacer/releases?per_page=100";
 std::atomic<bool> checked{false};
 mod_update::KernelHandle checkedEvent;
@@ -97,13 +99,14 @@ void CheckForStartupUpdate(HMODULE module) noexcept {
         const std::wstring latest(update->tag.begin(),update->tag.end());
         std::wstring body=japanese?L"新しいバージョンが公開されています。\r\n\r\n現在: ":L"A newer version is available.\r\n\r\nInstalled: ";
         body+=current+(japanese?L"\r\n公開版: ":L"\r\nAvailable: ")+latest;
-        body+=japanese?L"\r\n\r\nダウンロード・インストールは行いません。\r\n更新する場合はゲーム終了後に公開ページをご確認ください。":
-            L"\r\n\r\nNothing will be downloaded or installed.\r\nTo update, visit the release page after closing the game.";
+        body+=japanese?L"\r\n\r\n更新はゲーム終了後に行ってください。\r\n自動ダウンロード・インストールは行いません。":
+            L"\r\n\r\nUpdate after closing the game.\r\nNo automatic download or installation.";
         body+=L"\r\n\r\ngithub.com/Zakkey250/MW-NativeFreeRoamRacer/releases";
         const bool shown=mod_update::ShowSerializedNotice(module,
             japanese?L"MW Native Free Roam Racer — 更新通知":L"MW Native Free Roam Racer — Update available",
-            body.c_str(),japanese?L"閉じて続行":L"Close and continue",StartupNoticeAllowed);
-        Log(LogLevel::Info,"UPDATE_NOTICE current=%s available=%s shown=%u language=%s downloads=0",kVersion,update->tag.c_str(),unsigned(shown),japanese?"ja":"en");
+            body.c_str(),japanese?L"閉じて続行":L"Close and continue",StartupNoticeAllowed,
+            90000,60000,releasesUrl,japanese?L"GitHubを開く":L"Open GitHub");
+        Log(LogLevel::Info,"UPDATE_NOTICE current=%s available=%s shown=%u language=%s downloads=0 browserButton=1",kVersion,update->tag.c_str(),unsigned(shown),japanese?"ja":"en");
     }catch(...){Log(LogLevel::Info,"UPDATE_NOTICE skipped after internal error; startup unaffected");}
 }
 } // namespace native_freeroam

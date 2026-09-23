@@ -753,6 +753,19 @@ int RunCacheTests() {
     RunAlpha83Tests(expect);
     RunAlpha85Tests(expect);
     RunAlpha88Tests(expect);
+    {
+        const auto previous=g_verifiedExecutableSha256;
+        std::array<unsigned char,32> mainIdentity{},reduxIdentity{},mainAgain{};
+        g_verifiedExecutableSha256=nfrr_target::targets[0].sha256;
+        const bool mainOk=CalibrationIdentity({},&mainIdentity);
+        g_verifiedExecutableSha256=nfrr_target::targets[1].sha256;
+        const bool reduxOk=CalibrationIdentity({},&reduxIdentity);
+        g_verifiedExecutableSha256=nfrr_target::targets[0].sha256;
+        const bool repeatOk=CalibrationIdentity({},&mainAgain);
+        g_verifiedExecutableSha256=previous;
+        expect(mainOk&&reduxOk&&mainIdentity!=reduxIdentity,"Redux cache identity differs even with identical catalog files");
+        expect(repeatOk&&mainIdentity==mainAgain,"Main cache identity stays stable across target selection");
+    }
     VirtualFree(region, 0, MEM_RELEASE);
     return failures == 0 ? 0 : 1;
 }

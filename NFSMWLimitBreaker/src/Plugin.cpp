@@ -49,7 +49,7 @@ std::uint32_t g_audioAllocatorDescriptor = 0;
 volatile LONG g_resourceCapabilities = 0;
 std::uint32_t g_resourceLogicalLimit = 0;
 
-constexpr wchar_t kVersion[] = L"0.1.0";
+constexpr wchar_t kVersion[] = L"0.1.1";
 constexpr std::uint64_t kExpectedExecutableSize = 6029312ull;
 constexpr char kNfspatcherSha256[] =
     "80774C2E5D619B4F120B48D4462896FD504C263399D203A238769CFFDE1D253C";

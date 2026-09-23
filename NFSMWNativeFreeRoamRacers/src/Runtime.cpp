@@ -1,4 +1,5 @@
 #include "Runtime.h"
+#include "ExecutableTargets.h"
 
 #include "Logging.h"
 #include "VehicleCatalog.h"
@@ -160,9 +161,9 @@ constexpr std::uint32_t kPathRacer = 2;
 constexpr std::uint32_t kAIGoalRacerHash = 0x08D0D8A7;
 
 constexpr wchar_t kExpectedExecutableName[] = L"speed.exe";
-constexpr std::uint64_t kExpectedExecutableSize = 6029312;
-constexpr char kExpectedExecutableSha256[] =
-    "B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06";
+// Default only supports isolated offline tests. Live initialization verifies and
+// selects the actual identity before installing hooks or reading the catalog.
+const char* g_verifiedExecutableSha256 = nfrr_target::targets[0].sha256;
 
 struct Vec3 {
     float x = 0.0f;
@@ -2101,19 +2102,21 @@ bool VerifyHostExecutable() noexcept {
         (static_cast<std::uint64_t>(attributes.nFileSizeHigh) << 32) |
         attributes.nFileSizeLow;
     std::string hash;
-    if (size != kExpectedExecutableSize ||
+    if (!nfrr_target::KnownSize(size) ||
         !ComputeSha256(executablePath, &hash) ||
-        hash != kExpectedExecutableSha256) {
+        !nfrr_target::Find(size,hash)) {
         Log(LogLevel::Error,
             "Unsupported executable; fail-closed size=%llu sha256=%s",
             static_cast<unsigned long long>(size),
             hash.empty() ? "unavailable" : hash.c_str());
         return false;
     }
+    const auto* target=nfrr_target::Find(size,hash);
+    g_verifiedExecutableSha256=target->sha256;
     g_base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
     Log(LogLevel::Info,
-        "Supported NFSPatcher LAA target accepted size=%llu sha256=%s",
-        static_cast<unsigned long long>(size), hash.c_str());
+        "Supported executable accepted target=%s size=%llu sha256=%s",
+        target->id,static_cast<unsigned long long>(size), hash.c_str());
     return true;
 }
 
@@ -2225,7 +2228,7 @@ bool InstallRuntime() noexcept {
     InstallCustomSpeedHook();
     InstallEncounterSignalHooks();
     Log(LogLevel::Info,
-        "Runtime installed mode=release-0.1.0 max=%u totalVehicleBudget=%u racerConstructionLiveCeiling=%u populationRadius=%.1fm markerRadius=%.1fm managementMaxHz=20 nativeAITickUnthrottled=1 failurePolicy=retry-with-bounded-backoff cacheWantRetention=1 constructionProtection=all-live replacement=0 managedKillRetention=0 managedDeactivateRetention=0 destructorRetention=0 battleRouteAdapterStableHz=1 customManagementHz=4 customDriveHook=%u customSpeedHook=%u passTransitionImmediate=1 directSteeringWrites=0 borrowedAnchorRoadAcrossAllocation=0 nativeStartTimeoutMs=1000 limitBreakerRequired=0 populationApi=1 idleReserved=0 constructionReserved=1 vacancyTimeoutMs=1500 nativeStartOwnedRoadReseed=1 anchorSearchHz=1 deficitCadence=adaptive frontAnchorPriority=1 constructionLiveSet=native-after-retirement nativeRetirementBarrier=1 providerLimitPolicy=capabilities-and-consistency dynamicVehicleStorage=1",
+        "Runtime installed mode=dual-target max=%u totalVehicleBudget=%u racerConstructionLiveCeiling=%u populationRadius=%.1fm markerRadius=%.1fm managementMaxHz=20 nativeAITickUnthrottled=1 failurePolicy=retry-with-bounded-backoff cacheWantRetention=1 constructionProtection=all-live replacement=0 managedKillRetention=0 managedDeactivateRetention=0 destructorRetention=0 battleRouteAdapterStableHz=1 customManagementHz=4 customDriveHook=%u customSpeedHook=%u passTransitionImmediate=1 directSteeringWrites=0 borrowedAnchorRoadAcrossAllocation=0 nativeStartTimeoutMs=1000 limitBreakerRequired=0 populationApi=1 idleReserved=0 constructionReserved=1 vacancyTimeoutMs=1500 nativeStartOwnedRoadReseed=1 anchorSearchHz=1 deficitCadence=adaptive frontAnchorPriority=1 constructionLiveSet=native-after-retirement nativeRetirementBarrier=1 providerLimitPolicy=capabilities-and-consistency dynamicVehicleStorage=1",
         static_cast<unsigned int>(g_settings.maximumRacers),
         static_cast<unsigned>(g_settings.totalVehicleBudget),
         static_cast<unsigned>(kObservedRacerConstructionLiveCeiling),

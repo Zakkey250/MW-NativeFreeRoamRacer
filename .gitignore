@@ -12,3 +12,7 @@ package/
 *.obj
 *.user
 VehicleCatalog.cache.bin
+InstalledVehicleCatalog.h
+NFSMWLimitBreaker/bin/
+NFSMWLimitBreaker/obj/
+NFSMWLimitBreaker/obj-tests/

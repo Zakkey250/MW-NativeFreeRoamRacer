@@ -1,6 +1,15 @@
 # Validation / 検証範囲
 
-## v0.1.0 (current)
+## v0.1.1 Hotfix (current)
+
+- The tested development fixes completed approximately 32 minutes of play: 100 successful racer spawns, including 11 JESKO spawns, all 100 performance readbacks matching; no NFRR warnings/errors; three completed encounters. Replenishment continued to world exit. No new AV dump was captured. LB's render registry reached 32 entries without an integrity fault.
+- Four frame-delay observations (106–592 ms) remain unattributed; the log does not prove all stutters or intermittent invisible-body symptoms are fixed.
+- Release Win32 builds passed. Offline checks: NFRR runtime/cache 7,718; logging 60; update notification 62; LB 7,932. These tests do not replace gameplay validation. The formal release changes version labels and removes temporary read-only render-pool telemetry from the gameplay-tested build; it has not received a separate in-game run.
+- Shipping INIs remain unchanged from 0.1.0. LB is optional, and capability-based integrations are retained. LB-absent behavior is covered offline, not by a new independent gameplay session.
+
+約32分の修正検証で100回生成（JESKO 11回）、全100回の性能照合一致、3戦完了を確認しました。新規AVダンプやNFRR警告・エラーはありません。正式版は検証版から版番号と一時的な読み取り専用描画ログを整理したものです。静的試験・実走証拠の範囲を区別し、透明化全般や一切の停止現象の解消は保証しません。
+
+## v0.1.0
 
 - The release ASI SHA-256 is `BBEDCB6B19CBF4167C4203C5BA433E67E186D18C8CAC857BEE0F9D4C0FB939CD`. Gameplay code matches the accepted alpha.88 baseline; only the version and diagnostic mode label changed for release.
 - Release Win32 build and a clean build from the packaged source passed. Runtime/cache tests: 7,709 passed, 0 failed, 1 optional owned-voice skip; logging: 60 passed; update notice: 55 passed. The packaged source also passes all 7,709 runtime/cache checks.

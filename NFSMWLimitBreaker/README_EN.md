@@ -1,13 +1,15 @@
 # NFSMW Limit Breaker
 
-NFSMW Limit Breaker v0.1.0 Release is an independent ASI that safely raises Need for Speed: Most Wanted (2005)'s vehicle limit from 20 to at most 32. It relocates all ten `PVehicle*` table vectors, the companion AI-target `ISimable*` vector, and per-vehicle audio, physics, and component registries into separate 64-entry storage, then changes the related vehicle and traffic budgets as one unit.
+NFSMW Limit Breaker v0.1.1 Hotfix is an independent ASI that safely raises Need for Speed: Most Wanted (2005)'s vehicle limit from 20 to at most 32. It relocates all ten `PVehicle*` table vectors, the companion AI-target `ISimable*` vector, and per-vehicle audio, physics, and component registries into separate 64-entry storage, then changes the related vehicle and traffic budgets as one unit.
+
+Version 0.1.1 also expands the vehicle-render connection registry, fixing the omitted 20-entry store. See [hotfix notes](RELEASE_NOTES_v0.1.1.md).
 
 ## Compatibility and safety
 
 - Targets the 6,029,312-byte English 1.3 NFSPatcher executable, with or without the user-applied 4 GB/LAA flag.
 - Verifies the complete executable SHA-256 and every original instruction before changing memory.
 - Does not patch or require Unlimiter, Extra Options, Native Free Roam Racers, or MW Advanced Civilian Vehicles.
-- Uses process-lifetime 64-pointer storage for each of the 14 vectors. The release limit of 32 leaves 32 containment slots. This is not a claim of 64-vehicle support.
+- Uses process-lifetime 64-pointer storage for each of the 15 vectors. The release limit of 32 leaves 32 containment slots. This is not a claim of 64-vehicle support.
 - Activates all targets as one transaction only while every vector has its expected type and is empty. Conflicts or late loading leave the module inactive.
 - Monitors each relocated vector's type, data pointer, capacity, count, guards, and obsolete inline range. Diagnostics are written to `scripts/NFSMWLimitBreaker.log`.
 
@@ -16,7 +18,7 @@ Supported SHA-256 values:
 - Base NFSPatcher English 1.3: `80774C2E5D619B4F120B48D4462896FD504C263399D203A238769CFFDE1D253C`
 - Same executable with only the LAA flag/checksum changed: `B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06`
 
-## v0.1.0 Release
+## v0.1.1 Hotfix
 
 The release contains the gameplay-accepted logical-32 / physical-64 vehicle feature and the optional, restart-gated, capability-negotiated 8 MiB audio-arena expansion. The only accepted INI vehicle limits are `20 / 24 / 28 / 32`; 32 is the distribution recommendation. No CarLoader expansion code or setting is included.
 
@@ -42,7 +44,7 @@ The release contains the gameplay-accepted logical-32 / physical-64 vehicle feat
 
 `0.1.0-experimental.10-audio.2` keeps the feature and 8 MiB capacity unchanged while optimizing only the added audio diagnostics. It samples the audio-arena invariant every two seconds instead of every 100 ms and coalesces allocator low-water logs in 256 KiB rather than 64 KiB steps. The experimental.10 vehicle monitor cadence, 32/64 vehicle implementation, capability ABI, and audio allocation behavior are unchanged.
 
-`0.1.0-experimental.10-audio.2-carloader.1` was a rejected CarLoader-arena investigation. In-game testing with the 256 MiB stage produced stalls on the order of one second; an A/B run with the same ASI and only CarLoader disabled returned to stable behavior. v0.1.0 Release removes this feature from both code and configuration.
+`0.1.0-experimental.10-audio.2-carloader.1` was a rejected CarLoader-arena investigation. In-game testing with the 256 MiB stage produced stalls on the order of one second; an A/B run with the same ASI and only CarLoader disabled returned to stable behavior. v0.1.1 Hotfix removes this feature from both code and configuration.
 
 It does not claim that physics, police, rendering, streaming, audio, or third-party spawn logic can all support more than 20 vehicles. In particular, NFSMW's free-roam engine-audio pool has a separate limit.
 
@@ -53,3 +55,4 @@ The game normally removes/defer vehicles before the list reaches its logical cap
 Copy `NFSMWLimitBreaker.asi` and `NFSMWLimitBreaker.ini` to the game's `scripts` directory. The distribution-safe baseline is logical 32 / physical 64 with `MaxVehicles = 32`. Enable `[Audio] LBEngineAudioExpansion = 1` only when the independent audio feature is wanted, then fully restart the game. NFRR negotiates this capability and safely falls back to its original audio-slot behavior when the requirements are not met.
 
 Static/startup validation is not in-game acceptance. Test transitions, races, pursuits, busted state, safehouse entry/exit, frontend return, and vehicle destruction before treating the experiment as gameplay-safe.
+

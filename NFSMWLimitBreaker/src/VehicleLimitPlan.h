@@ -113,8 +113,14 @@ constexpr std::size_t kVehicleAudioVectorIndex = kAITargetVectorIndex + 1;
 constexpr std::size_t kActiveVehicleComponentVectorIndex = kVehicleAudioVectorIndex + 1;
 constexpr std::size_t kVehicleComponentRegistryVectorIndex =
     kActiveVehicleComponentVectorIndex + 1;
+// The race-end renderer iterates this registry at 0x006E52AD. The 2026-09-23
+// dump had count=30 with capacity=20 and still used the inline buffer. Include
+// it in the same guarded relocation/rollback/monitoring as vehicle registries.
+constexpr std::size_t kCarRenderConnectionVectorIndex = kVehicleComponentRegistryVectorIndex + 1;
+constexpr std::uintptr_t kCarRenderConnectionVector = 0x009B37C8u;
+constexpr std::uint32_t kExpectedCarRenderConnectionVectorVtable = 0x008B51A8u;
 
-constexpr std::array<FixedVectorSpec, kVehicleComponentRegistryVectorIndex + 1>
+constexpr std::array<FixedVectorSpec, kCarRenderConnectionVectorIndex + 1>
 kRelocatedVectors{{
     {"pvehicle-0", kVehicleVector + 0 * kVehicleVectorStride, kExpectedVectorVtable},
     {"pvehicle-1", kVehicleVector + 1 * kVehicleVectorStride, kExpectedVectorVtable},
@@ -132,6 +138,8 @@ kRelocatedVectors{{
         kExpectedActiveVehicleComponentVectorVtable},
     {"vehicle-component-registry", kVehicleComponentRegistryVector,
         kExpectedVehicleComponentRegistryVtable},
+    {"car-render-connections", kCarRenderConnectionVector,
+        kExpectedCarRenderConnectionVectorVtable},
 }};
 
 constexpr std::uintptr_t VectorDataAddress(const FixedVectorSpec& spec) {

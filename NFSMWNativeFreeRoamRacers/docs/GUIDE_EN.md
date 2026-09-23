@@ -1,8 +1,8 @@
-# MW Native Free Roam Racer — v0.1.0
+# MW Native Free Roam Racer — v0.1.1
 
 Bring roaming AI racers and one-on-one encounter battles to Rockport in Need for Speed Most Wanted (2005).
 
-NFRR is the main mod. **NFSMW Limit Breaker (LB) v0.1.0 is included as an optional companion, and using them together is recommended.** NFRR also works without LB.
+NFRR is the main mod. **NFSMW Limit Breaker (LB) v0.1.1 is included as an optional companion, and using them together is recommended.** NFRR also works without LB.
 
 ## Why use the included Limit Breaker?
 
@@ -69,7 +69,7 @@ Edit `scripts/NFSMWNativeFreeRoamRacers.ini` while the game is closed, then rest
 
 No game audio is included. The separate **NFSU2EncounterAudioExtractor v1.1.0 no-decoder package** uses your own UG2 `SDATA/sdat.viv`; follow its instructions to supply the decoder separately. Copy the generated `NativeFreeRoamRacers` folder into MW's `scripts`. Keep `speaker**` filenames and `encounter/start`, `player_victory`, `player_defeat` folders. Voices are non-positional and follow game voice volume. No `Setting.ini` is needed; battles work without voices.
 
-Startup update notices query public GitHub metadata without downloading/installing anything. Stable v0.1.0 considers newer stable releases, not Alpha builds. `[Updates] Enabled = 0` disables communication and notices. `Language = auto` follows the encounter language; Japanese uses Japanese, other languages use English. Offline/errors do not block play. Cooperating mods can serialize their notices.
+Startup update notices query public GitHub metadata without downloading/installing anything. Stable v0.1.1 considers newer stable releases, not Alpha builds. `[Updates] Enabled = 0` disables communication and notices. `Language = auto` follows the encounter language; Japanese uses Japanese, other languages use English. Offline/errors do not block play. Cooperating mods can serialize their notices.
 
 ## Limits, reporting and rights
 
@@ -77,6 +77,7 @@ Vehicle/resource limits and safe anchor availability may keep racers below your 
 
 Shared-model lifetime checks and performance-reference validation improve safety, but do not repair every malformed vehicle mod. The latest pre-release gameplay was stable; actual shared-alias detachment was not observed in that run, so universal CTD prevention is not claimed.
 
-Report version, executable hash, relevant mods/car setup, reproduction steps and `scripts/NFSMWNativeFreeRoamRacers.log` (plus LB log if used). Review logs for personal information before sharing. See `PATCH_NOTES_v0.1.0.md` for changes since public Alpha.59 and `docs/NFSMWLimitBreaker/` for companion details.
+Report version, executable hash, relevant mods/car setup, reproduction steps and `scripts/NFSMWNativeFreeRoamRacers.log` (plus LB log if used). Review logs for personal information before sharing. See `PATCH_NOTES_v0.1.1.md` for changes since public Alpha.59 and `docs/NFSMWLimitBreaker/` for companion details.
 
 Research, discussion and personal use are allowed under `LICENSE.md`; redistribution and distribution of modified builds require permission. Third-party rights remain unchanged. Do not redistribute game assets or extracted voices.
+

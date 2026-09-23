@@ -141,6 +141,30 @@ __declspec(noinline) void RunAlpha85Tests(Expect expect) {
         "alpha85 read exception result fails closed");
     expect(plan.chosen==original.chosen&&plan.maximum==original.maximum,"alpha85 no career levels changed by validation");
 
+    // JESKO-style no-op endpoints: use the native effective plan before
+    // allocating a car, never weaken post-spawn exact verification.
+    arrays=validArrays;plan=original;plan.chosen=plan.maximum;
+    arrays[2].refs[1]=arrays[2].refs[0];unsigned mask=0;
+    expect(ValidatePerformanceReferences(plan,read,resolve,&issue,&mask)&&mask==4,
+        "hotfix identical valid chassis endpoints at maximum produce no-op candidate");
+    expect(NormalizeNoOpPerformance(&plan,mask,2,0)&&plan.chosen[2]==0&&plan.maximum[2]==3&&plan.chosen[4]==4,
+        "hotfix only no-op chassis changes while maximum and other upgrades remain intact");
+    plan.chosen[2]=2;
+    expect(ValidatePerformanceReferences(plan,read,resolve,&issue,&mask)&&mask==0,
+        "hotfix partial interpolation is not normalized");
+    plan.chosen[2]=3;arrays[2].count=3;arrays[2].refs[2]=arrays[2].refs[1];
+    expect(ValidatePerformanceReferences(plan,read,resolve,&issue,&mask)&&mask==0,
+        "hotfix three-entry endpoints are not normalized");
+    arrays=validArrays;arrays[2].refs[1]=arrays[2].refs[0];arrays[6].refs[1]=arrays[6].refs[0];
+    expect(ValidatePerformanceReferences(plan,read,resolve,&issue,&mask)&&mask==4,
+        "hotfix mandatory NOS is never normalized to zero");
+    expect(!NormalizeNoOpPerformance(&plan,mask,2,1)&&plan.chosen[2]==3,
+        "hotfix non-stock native level is not normalized");
+    arrays[4].refs[1].mCollectionKey=0x3A41650A;
+    expect(!ValidatePerformanceReferences(plan,read,resolve,&issue,&mask)&&mask==0&&plan.chosen[2]==3,
+        "hotfix invalid later reference discards all no-op candidates atomically");
+    arrays=validArrays;plan=original;
+
     auto cache=std::make_unique<InvalidPerformanceModels>();
     expect(cache->Reject(42,1)&&!cache->Reject(42,1)&&cache->Contains(42,1)&&!cache->Contains(43,1),
         "alpha85 repeated rejected key is logged once and unrelated models unaffected");
