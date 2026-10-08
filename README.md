@@ -44,4 +44,6 @@ No game executable, car assets, saves, generated caches or extracted voices are 
 
 ## Rights / 利用条件
 
-See [LICENSE.md](LICENSE.md): research, discussion and personal use are permitted; redistribution and distribution of modified builds require express permission. Third-party rights and previously granted licenses are preserved. Unofficial fan project; not affiliated with or endorsed by Electronic Arts.
+Original code and documentation by Zakkey250 are licensed under the [MIT License](LICENSE.md). Third-party components retain their respective licenses. This license grants no rights to game assets, extracted voices, or other third-party material. Unofficial fan project; not affiliated with or endorsed by Electronic Arts.
+
+Zakkey250が制作したコードと文書は[MIT License](LICENSE.md)で公開します。第三者コンポーネントには、それぞれのライセンスが引き続き適用されます。ゲーム資産・抽出音声・その他の第三者素材に関する権利を付与するものではありません。

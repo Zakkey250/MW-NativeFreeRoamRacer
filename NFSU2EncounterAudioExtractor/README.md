@@ -70,6 +70,6 @@ WAV decoding is provided by a separately installed vgmstream bundle. See `THIRD_
 
 ## Source use / ソース利用条件
 
-Research, exchange of ideas and personal use are permitted under [LICENSE.txt](LICENSE.txt). Redistribution and distribution of modified builds require prior express permission. Third-party licenses and rights already granted for earlier MIT-licensed copies are preserved. This publication is source-available, not an open-source license.
+Original extractor code and documentation are licensed under the [MIT License](LICENSE.txt). Third-party components retain their respective licenses. This license grants no rights to game data, extracted audio, or other third-party material.
 
-[LICENSE.txt](LICENSE.txt)に従い研究・意見交換・個人利用を許可します。再配布・改変物のビルド配布には事前の明示的な許可が必要です。第三者ライセンスと、以前のMIT版で付与済みの権利は維持します。ソース公開であり、オープンソースライセンスではありません。
+抽出器の独自コードと文書は[MIT License](LICENSE.txt)で公開します。第三者コンポーネントには、それぞれのライセンスが引き続き適用されます。ゲームデータ・抽出音声・その他の第三者素材に関する権利を付与するものではありません。

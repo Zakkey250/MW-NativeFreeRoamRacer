@@ -1,8 +1,8 @@
 # Build / ビルド
 
-Personal research/builds are allowed under [the source terms](LICENSE.md); distributing modified builds requires prior express permission. Third-party components retain their own licenses.
+Original project code and documentation are licensed under the [MIT License](LICENSE.md). Third-party components retain their own licenses.
 
-研究・個人利用のビルドは可能です。改変ビルドの配布には事前の明示的な許可が必要です。第三者ライブラリのライセンスは維持します。
+本プロジェクトの独自コードと文書は[MIT License](LICENSE.md)で公開します。第三者ライブラリには、それぞれのライセンスが引き続き適用されます。
 
 ## MW mod
 

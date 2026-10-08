@@ -79,5 +79,4 @@ Shared-model lifetime checks and performance-reference validation improve safety
 
 Report version, executable hash, relevant mods/car setup, reproduction steps and `scripts/NFSMWNativeFreeRoamRacers.log` (plus LB log if used). Review logs for personal information before sharing. See `PATCH_NOTES_v0.1.1.md` for changes since public Alpha.59 and `docs/NFSMWLimitBreaker/` for companion details.
 
-Research, discussion and personal use are allowed under `LICENSE.md`; redistribution and distribution of modified builds require permission. Third-party rights remain unchanged. Do not redistribute game assets or extracted voices.
-
+Original project code and documentation are licensed under the MIT License in `LICENSE.md`. Third-party rights remain unchanged. The project license grants no rights to game assets or extracted voices.
