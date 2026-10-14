@@ -12,6 +12,10 @@ Turn on `[Encounter] WinStreakWager = 1` to add a risk-and-reward system to **Cu
 - Win to receive the amount fixed at the start; lose or forfeit to lose the same amount. Insufficient cash blocks the challenge before it starts.
 - Losing, changing profile, or leaving free roam for a safehouse, shop or normal event resets the streak. Pausing does not reset it.
 
+### AI tuning parity
+
+- Added supported Junkman upgrade matching for battle AI based on the player's equipped parts. Matching categories are preferred, with supported alternatives when needed; the player's record and global unlock state are not changed.
+
 ### Smoother operation and fixes
 
 - Failed rival-marker allocation now uses a shared 1–8 second retry delay and aggregated warnings, instead of retrying and writing an error every management update. A full native icon table is checked before allocation. This reduces unnecessary work; it does not expand the game's icon capacity.
@@ -44,6 +48,10 @@ Close the game before updating. Back up and merge new INI entries rather than re
 - 初戦はブラックリスト順位に応じた通常報酬。以降は連勝1回ごとに**基本報酬の5%**を加算します。例：300 → 315 → 330。複利・端数切捨て・ゲーム上の倍率上限はありません。
 - 勝利で開始時に確定した額を獲得し、敗北・反則負けで同額を失います。掛け金不足なら開始前に拒否されます。
 - 敗北、プロフィール変更、セーフハウス・ショップ・通常イベントなどへのフリーローム離脱で連勝リセット。一時停止だけではリセットしません。
+
+### AIのチューニング追従
+
+- 対戦AIに、プレイヤーの装備済みJunkmanパーツに応じた強化を反映。対応する同種パーツを優先し、必要に応じて装備可能な別カテゴリを選びます。自車データや全体の解放状態は変更しません。
 
 ### 動作改善・不具合修正
 
