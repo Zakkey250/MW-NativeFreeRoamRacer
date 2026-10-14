@@ -61,9 +61,9 @@
         // Full native-shaped owner/nav chain for both positive and fail-closed path routing.
         std::array<unsigned char,0x7CC> aiBlob{};std::array<unsigned char,0x300> navBlob{};
         std::array<unsigned char,0x40> goalBlob{},actionBlob{},targetBlob{};
-        const std::size_t slots[]={kSlotPosition,kSlotHeading,kSlotSpeed,kSlotOffScreenTime,kSlotOnScreenTime};
+        const std::size_t slots[]={kSlotPosition,kSlotComputeHeading,kSlotSpeed,kSlotOffScreenTime,kSlotOnScreenTime};
         std::array<void*,5> savedSlots{};
-        for(unsigned i=0;i<5;++i){savedSlots[i]=table[slots[i]];table[slots[i]]=i<2?reinterpret_cast<void*>(&Alpha32Vector):reinterpret_cast<void*>(&Alpha32Float);}
+        for(unsigned i=0;i<5;++i){savedSlots[i]=table[slots[i]];table[slots[i]]=i==0?reinterpret_cast<void*>(&Alpha32Vector):(i==1?reinterpret_cast<void*>(&Alpha32Heading):reinterpret_cast<void*>(&Alpha32Float));}
         put(vehicleBlob,0,reinterpret_cast<std::uintptr_t>(table));put(vehicleBlob,4,123u);put(vehicleBlob,8,unsigned(kDriverRacer));
         put(vehicleBlob,12,reinterpret_cast<std::uintptr_t>(&simable));put(vehicleBlob,0x54,reinterpret_cast<std::uintptr_t>(aiBlob.data()+0x4C));
         put(aiBlob,0,Address(kRacecarPrimaryVtable));put(aiBlob,0x4C,Address(kRacecarIVehicleAIVtable));put(aiBlob,0x7C4,Address(0x008925B4));
@@ -80,7 +80,7 @@
         g_settings.encounterAIMode=encounter_custom::Mode::Custom;
         g_customDriveInstalled=true;g_battle.customDirect=true;g_battle.customHintAt=1000;
         auto* directOwner=aiBlob.data()+0x4C;
-        Vec3 nativeAim{7,8,9},actualAim{};
+        const auto nativeAim=ToUMath({7,8,9});Vec3 actualAim{};
         g_originalCustomDrive=reinterpret_cast<CustomDriveFn>(&Alpha53Drive);alpha53DriveCalls=0;
         g_originalCustomSpeed=reinterpret_cast<CustomSpeedFn>(&Alpha54Speed);
         g_customSpeedInstalled=true;g_battle.customSpeedDemand=90;alpha54SpeedCalls=0;
@@ -214,7 +214,7 @@
         }
         expect(hooked,"alpha53 exact SetDriveTarget prologue supports x86 trampoline");
         if(hooked) {
-            std::array<unsigned char,128> owner{};Vec3 copied{},input{13,24,35};
+            std::array<unsigned char,128> owner{};CustomDriveVector copied{};const auto input=ToUMath({13,24,35});
             reinterpret_cast<CustomDriveFn>(code)(owner.data(),&input);
             std::memcpy(&copied,owner.data()+0x3C,sizeof(copied));
             expect(copied.x==13&&copied.y==24&&copied.z==35,"alpha53 target trampoline preserves this and RET4 vector copy");

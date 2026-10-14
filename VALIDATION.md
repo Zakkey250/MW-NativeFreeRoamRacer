@@ -1,70 +1,29 @@
-# Validation / 検証範囲
+# NFRR 0.1.2 validation
 
-## v0.1.1 Hotfix (current)
+Release preparation on 2026-10-14. Baseline: published NFRR 0.1.1. Latest development sources were staged separately; the release version was not installed into Main or W2C Sandbox.
 
-- The tested development fixes completed approximately 32 minutes of play: 100 successful racer spawns, including 11 JESKO spawns, all 100 performance readbacks matching; no NFRR warnings/errors; three completed encounters. Replenishment continued to world exit. No new AV dump was captured. LB's render registry reached 32 entries without an integrity fault.
-- Four frame-delay observations (106–592 ms) remain unattributed; the log does not prove all stutters or intermittent invisible-body symptoms are fixed.
-- Release Win32 builds passed. Offline checks: NFRR runtime/cache 7,718; logging 60; update notification 62; LB 7,932. These tests do not replace gameplay validation. The formal release changes version labels and removes temporary read-only render-pool telemetry from the gameplay-tested build; it has not received a separate in-game run.
-- Shipping INIs remain unchanged from 0.1.0. LB is optional, and capability-based integrations are retained. LB-absent behavior is covered offline, not by a new independent gameplay session.
+## Build and offline checks
 
-約32分の修正検証で100回生成（JESKO 11回）、全100回の性能照合一致、3戦完了を確認しました。新規AVダンプやNFRR警告・エラーはありません。正式版は検証版から版番号と一時的な読み取り専用描画ログを整理したものです。静的試験・実走証拠の範囲を区別し、透明化全般や一切の停止現象の解消は保証しません。
+- NFRR 0.1.2: clean Release Win32 build from the public source layout, including minimal optional-provider headers.
+- LB: current 0.1.3-resource-headroom.2 source rebuilt successfully; 7,934 native checks passed. The bundled ASI is the accepted companion artifact from the 2026-10-14 handoff, SHA-256 `EBE0D21EE0995BE6C2989A72629DDD0E51C667AD9B46D3E4F747742A49EE5590`. Local rebuilds may differ in layout/debug records/toolchain and do not replace the accepted runtime artifact.
+- NFRR aggregate cache/AI/geometry/audio/population fixture suite: 9,274 checks passed.
+- Reward/wager helper checks: 1,500 Blacklist/streak cases, plus cash limits, reset and police/rival identity checks.
+- Marker/prompt guard tests: six racers over 120 seconds of continuous allocation failure produced 18 shared probes and four warnings; native and recognized adapter surfaces accepted, unrelated/private/unreadable destinations rejected.
+- Update-notice tests: 68 passed, including numeric release selection, prerelease-to-stable progression, language choice and serialized notification clients.
+- Diagnostic logger tests: missing/empty/malformed/OFF configurations create no log, skip formatting, create no logging worker and skip telemetry. ON creates output.
+- Actual shipping NFRR/LB DLLs loaded in isolated unsupported test hosts: missing/invalid/OFF created no diagnostic log; ON created diagnostic output. These hosts intentionally fail game identity checks and do not install game hooks.
+- ZIPs and SHA-256 manifests are checked against staged file contents. Source archives contain no compiled binaries, installed catalogs, saves, generated caches or game assets.
 
-## v0.1.0
+## Gameplay evidence and limits
 
-- The release ASI SHA-256 is `BBEDCB6B19CBF4167C4203C5BA433E67E186D18C8CAC857BEE0F9D4C0FB939CD`. Gameplay code matches the accepted alpha.88 baseline; only the version and diagnostic mode label changed for release.
-- Release Win32 build and a clean build from the packaged source passed. Runtime/cache tests: 7,709 passed, 0 failed, 1 optional owned-voice skip; logging: 60 passed; update notice: 55 passed. The packaged source also passes all 7,709 runtime/cache checks.
-- The preceding alpha.88 gameplay session completed eight battles and 57 spawns, including ten CIVICFN2 spawns, without logged NFRR warnings/errors or captured access violations/dumps. Replenishment continued until exit. This is evidence from one development installation, not universal compatibility.
-- The shared-solid lifecycle hook was active, but no alias-detachment operation was recorded in that session. Actual repair execution under the problematic condition remains unproven. The earlier allocator CTD and shared-solid CTD are not assumed to share one cause; no claim of complete CTD prevention is made.
-- NFRR's 33 effective shipping INI settings match the tested setup. The included LB binary matches that installation. Optional LB/weapon capability paths are retained. LB-absent gameplay with the new stable artifact has not been independently documented; offline coverage is not a substitute for that test.
-- The stable package was installed for the user's pre-publication test with existing settings/saves/other mods preserved. The user subsequently authorized publication; no additional successful gameplay session is inferred solely from that authorization.
-- ZIP entries and their hashes were verified. No game assets, extracted voices, personal saves, generated car catalog, runtime logs or dumps are distributed. The extractor remains the unchanged v1.1.0 no-decoder package.
+The underlying development functionality has previous user gameplay acceptance, including the win-streak system and current LB resource improvements. The final version-stamped NFRR build has not been run in Main/Sandbox in this task, as requested for update-notice testing. Offline and unsupported-host load checks do not certify new in-game icon visibility, audio, every car pack or all race transitions.
 
-正式版はalpha.88から版番号・診断表示のみ変更しています。ビルド、梱包ソースの再ビルド、本体7,709件・ログ60件・通知55件の試験を通過。直前の実走は8戦・57台生成で例外や補充停止なし。ただし共有参照解除の実作動は未観測で、CTDの完全解消や他環境全般を保証しません。新正式版のLBなし実走は独立した記録がありません。公開指示を新しい実走成功の証拠とは扱いません。
+Event Loader support is advance compatibility. Event Loader itself is not part of this release. Skin/model/audio/vehicle budgets remain separate, and general invisible-body or 16-car/all-MOD compatibility is not guaranteed.
 
-## alpha.59 (previous release)
+## 日本語
 
-- The distributed ASI matches the installed alpha.59 binary: SHA-256 `6867D86980E8585B8EED2724B062552C6B048DAF5C7367567AE9C1EAB66DC17B`. Runtime source and public source are compared byte-for-byte; build paths may change a rebuild's binary hash.
-- Release Win32 builds successfully. The core offline harness passes 1,396 checks, with 0 failures and one optional owned-voice check skipped. Update-notice tests pass 55 checks offline; live-metadata and standalone-dialog modes each pass 58 (including repeated base checks).
-- Standalone Japanese/English test dialogs were created and auto-closed. Numeric versions, release/asset filtering, notification serialization, bounded queues and gameplay cancellation are tested. This is not screenshot QA or an in-game startup/combined-MOD acceptance test.
-- The alpha.58 cruising and speed-matching changes received user gameplay confirmation. No additional game run is implied by packaging alpha.59. The new startup notice still needs in-game acceptance when an eligible newer release exists.
-- Effective INI values match the current installed configuration. The unchanged icon has SHA-256 `CA929293186A10867B65729CE78AF89C5F5DE880239A402EC68E35E0169D32D1`. Packaging does not modify the installation or saves.
-- Optional integration code is retained; no separate integration MOD binaries are bundled. Missing/unavailable interfaces disable only the dependent features. Other executable/car/mod configurations, extended-duration behavior and difficult AI routes remain unverified.
+公開0.1.1を基点とし、配布用の独立ソースからビルド・オフライン検査を実施しました。NFRR 9,274件、LB 7,934件、更新通知68件、報酬・掛け金1,500ケースなどが成功。ログOFF時の非作成とON時の出力も、実ロガーおよび配布DLLの隔離読み込みで確認しました。
 
-配布ASIは導入済みalpha.59と同一です。公開ソースとの一致・Win32ビルド・本体1,396件と通知55件のオフライン試験を確認。実通信・独立ウィンドウ試験は各58件（基礎試験を含む）です。alpha.58の巡航・開始条件はユーザー実走確認済みですが、alpha.59の実ゲーム起動時通知と他MODを組み合わせた通知表示は未検証です。INI実効値を維持し、梱包でゲーム本体やセーブは変更しません。
+同梱LBは引き継ぎで指定された実走採用済み成果物です。再ビルドは成功していますが、ローカル再ビルドを採用済みバイナリと同一ハッシュだとは扱いません。
 
-## alpha.57 (previous release / 過去の記録)
-
-- The distributed ASI is the exact installed binary accepted by the user after the Japanese text hotfix: SHA-256 `DB9B94D5A830A923F00B8568AF5A3D55C23512D99695502354A33579CF3859C7`.
-- Runtime acceptance is the user's report of no noticeable issues on the development installation. No new gameplay run is implied by release preparation.
-- Public source builds as Release Win32. The offline harness passes 1,338 checks with 0 failures; one optional owned-audio check is skipped. Source/compiled behavior and native-ABI fixtures are tested, not every gameplay situation.
-- The icon remains unchanged: SHA-256 `CA929293186A10867B65729CE78AF89C5F5DE880239A402EC68E35E0169D32D1`.
-- INI values match the accepted installed configuration. `Language = ja` and `[BackgroundPolice] Enabled = 1` explicitly expose already-active defaults. Bilingual comments and layout were reorganized; the game installation is not changed by packaging.
-- No Arms Assist source or build is distributed. New bridge-dependent behavior was developed with a private compatible build and must not be presented as available with all public installations. Unsupported/missing weapon integration leaves normal encounters available.
-- The exact executable guard is unchanged. Other game/car/mod configurations, long-duration resource limits and all unusual obstacle cases remain unverified.
-
-配布物は日本語文面修正後にユーザーが「目立った不具合無し」と確認したASIそのものです。公開ソースのビルド・1,338件のオフライン試験と、実ゲームのユーザー確認は区別します。Arms Assistのソース・ビルドは非同梱・非公開で、新連携は対応版の公開待ちです。INIでは省略されていた日本語と背景警察ONを明示しただけで、既存値は維持しています。
-
-## alpha.50 (previous release / 過去の記録)
-
-- The shipped ASI is the accepted gameplay binary, not a new gameplay revision: 241,152 bytes; SHA-256 `24BB75458CE931805CB9EEBFF33722D2F8BCBE6D1171C1FCBA7B762809055767`.
-- Challenge icon TPK SHA-256: `CA929293186A10867B65729CE78AF89C5F5DE880239A402EC68E35E0169D32D1`.
-- The accepted session loaded the persistent catalog (512 frontend records / 82 model types), recorded 61 spawns and repeatedly reached 6/6 racers, with no logged ERROR/WARN or spawn failures.
-- The offline harness covers 1,039 checks. These cover guards, catalog/cache ownership and invalidation, spawning and encounter logic; they are not proof of all in-game cases.
-- Distribution INI key/value defaults match the accepted installation; comments are rewritten in Japanese/English. Population 600 m, markers 200 m, six racers, five model types, four free-roam audio slots.
-- Other installations/car rosters and changed-data recalibration are not yet gameplay-validated. Unsupported executables/hooks are rejected rather than assumed compatible.
-
-配布ASIは実走で受け入れ済みのalpha.50そのものです。確認セッションでは61回生成、6/6台を繰り返し維持し、ERROR/WARN・生成失敗はありませんでした。INIの値は確認済みの導入環境と同じで、コメントのみ日英整理しています。1,039項目のオフライン試験は実走の代替ではありません。他環境・改変検知後の再キャリブレーションの実走検証は未実施です。
-
-## Extractor v1.1.0
-
-- The packaged executable is unchanged from the accepted v1.1.0 build. SHA-256: `9DAB134DAADC854A64511A516531CD0BD5672EFDAA5125B3B60F00124069564F`.
-- This distribution updates documentation/license notices, not extraction logic. Previously granted MIT rights for earlier copies are not revoked.
-- Five source unit tests cover archive structure, bounds, selectors, language discovery and language-neutral filenames.
-- Earlier full Japanese retail extraction produced 599 valid WAVs (260 start, 186 victory, 153 defeat). Other language archives have not received the same full runtime test.
-- The public archive contains no game archive, extracted voices or personal extraction manifest. Decoder binaries are excluded; users must separately install an official vgmstream CLI bundle. The earlier full extraction validation used that external decoder.
-
-抽出アプリは動作確認済みv1.1.0のEXEを維持し、説明書・利用条件を整理しています。以前のMIT版の取得者に与えられた権利は取り消しません。日本語版599件の抽出実績と、他言語の構造対応を区別しています。
-
-Neither package is digitally signed. These checks are not an antivirus/security certification. No gameplay acceptance is inferred merely from compilation or packaging.
-
-両配布物ともデジタル署名はありません。これらの確認はセキュリティ認証ではなく、ビルド・梱包の成功を実走確認と同一視しません。
+更新通知の確認を妨げないため、バージョンを打ったNFRRはMain・Sandboxへ導入していません。既存のユーザー実走確認と今回のビルド検査を区別し、最終ビルドの新たな実走・全車種・全MOD構成の保証は行いません。Event Loader本体は非同梱です。

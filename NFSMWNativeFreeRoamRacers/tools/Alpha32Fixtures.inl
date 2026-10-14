@@ -1,6 +1,10 @@
 namespace native_freeroam { namespace {
 NFSPluginSDK::MW05::UMath::Vector3 alpha32Vector{};
 const NFSPluginSDK::MW05::UMath::Vector3* __fastcall Alpha32Vector(void*,void*) {return &alpha32Vector;}
+unsigned alpha32HeadingCalls=0,alpha32LocalVelocityCalls=0;
+NFSPluginSDK::MW05::UMath::Vector3 alpha32Heading{1,0,0},alpha32LocalVelocity{80,0,0};
+void __fastcall Alpha32Heading(void*,void*,NFSPluginSDK::MW05::UMath::Vector3* out){++alpha32HeadingCalls;*out=alpha32Heading;}
+const NFSPluginSDK::MW05::UMath::Vector3* __fastcall Alpha32LocalVelocity(void*,void*){++alpha32LocalVelocityCalls;return &alpha32LocalVelocity;}
 float __fastcall Alpha32Float(void*,void*) {return 0;}
 unsigned alpha32PathCalls=0;
 void* alpha32PathNav=nullptr;
@@ -10,7 +14,7 @@ Vec3 alpha51CopiedPosition{},alpha51CopiedHeading{};
 bool alpha51HadHeading=false;
 unsigned alpha53DriveCalls=0;
 Vec3 alpha53DriveAim{};
-const Vec3* alpha53DrivePointer=nullptr;
+const CustomDriveVector* alpha53DrivePointer=nullptr;
 void* alpha53DriveOwner=nullptr;
 unsigned alpha54SpeedCalls=0;
 float alpha54SpeedValue=0;
@@ -18,9 +22,9 @@ void* alpha54SpeedOwner=nullptr;
 void __fastcall Alpha54Speed(void* owner,void*,float speed) {
     ++alpha54SpeedCalls;alpha54SpeedOwner=owner;alpha54SpeedValue=speed;
 }
-void __fastcall Alpha53Drive(void* owner,void*,const Vec3* aim) {
+void __fastcall Alpha53Drive(void* owner,void*,const CustomDriveVector* aim) {
     ++alpha53DriveCalls;alpha53DriveOwner=owner;alpha53DrivePointer=aim;
-    if(aim) alpha53DriveAim=*aim;
+    if(aim) alpha53DriveAim=FromUMath(*aim);
 }
 bool __fastcall Alpha32Path(void* nav,void*,const Vec3* pos,const Vec3* heading,bool flag) {
     ++alpha32PathCalls;alpha32PathNav=nav;alpha32PathPosition=pos;alpha32PathHeading=heading;alpha32PathFlag=flag;

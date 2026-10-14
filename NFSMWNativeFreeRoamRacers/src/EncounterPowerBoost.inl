@@ -7,6 +7,19 @@ std::atomic<float> g_encounterPowerScale{1};
 std::atomic<ULONGLONG> g_encounterPowerRefresh{0};
 std::atomic<unsigned> g_encounterPowerCalls{0};
 bool g_encounterPowerInstalled=false;
+struct RaceJunkmanProbe {void* ai=nullptr;void* vehicle=nullptr;void* race=nullptr;ULONGLONG next=0;};
+std::array<RaceJunkmanProbe,16> g_raceJunkmanProbes{};
+void MirrorStandaloneRaceJunkman(void* ai,const VehicleSnapshot& racer,const VehicleSnapshot& player,ULONGLONG now) noexcept {
+    void* race=nullptr;SafeRead(reinterpret_cast<void*>(Address(0x91E000)),&race);
+    RaceJunkmanProbe* selected=nullptr;
+    for(auto& row:g_raceJunkmanProbes)if(row.ai==ai){selected=&row;break;}
+    if(!selected)for(auto& row:g_raceJunkmanProbes)if(!row.ai){selected=&row;break;}
+    if(!selected)return;
+    if(selected->vehicle==racer.pointer&&selected->race==race&&now<selected->next)return;
+    unsigned playerCount=0,aiCount=0;
+    MirrorJunkmanToRaceAI(player.pointer,racer.pointer,&playerCount,&aiCount);
+    *selected={ai,racer.pointer,race,now+5000};
+}
 float EncounterPowerTier(bool active,bool playerLeads,float gap) noexcept {
     if(!active||!std::isfinite(gap)||gap<0||gap>300) return 1;
     if(!playerLeads) return g_settings.encounterAIMode==encounter_custom::Mode::Custom?
@@ -14,14 +27,14 @@ float EncounterPowerTier(bool active,bool playerLeads,float gap) noexcept {
     return g_settings.encounterPowerScales[gap<=100?0:(gap<=200?1:2)];
 }
 float ScaleEncounterPowerTerm(float native,float scale) noexcept {
-    if(!std::isfinite(native)||native<0||native>1||!std::isfinite(scale)||scale<=1||scale>2.0f) return native;
     // 006B0016: output *= (1 + 0.5 * GetCatchupCheat()).
     // Multiply that output by scale, rather than treating scale as a cheat value.
-    return (native+2.0f)*scale-2.0f;
+    return race_power::Scale(native,scale);
 }
 void ClearEncounterPowerBoost() noexcept {
     g_encounterPowerScale.store(1,std::memory_order_release);
     g_encounterPowerRefresh.store(0,std::memory_order_release);
+    g_raceJunkmanProbes={};
 }
 void UpdateEncounterPowerBoost(bool active,bool playerLeads,float gap) noexcept {
     const float scale=g_encounterPowerInstalled?EncounterPowerTier(active,playerLeads,gap):1;
@@ -31,6 +44,28 @@ void UpdateEncounterPowerBoost(bool active,bool playerLeads,float gap) noexcept 
 float ApplyEncounterPowerBoost(void* cheater,std::uintptr_t caller,float native,ULONGLONG now) noexcept {
     if(caller!=Address(0x006B0016)) return native;
     if(!std::isfinite(native)||native<0||native>1) return native;
+    if(BattleVtable(cheater,0x008925C4)){
+        VehicleSnapshot racer{},player{};auto* ai=static_cast<unsigned char*>(cheater)-0x720+0x4C;
+        // Event-owned NeoAI applies its configured constant multiplier after
+        // this native term; do not compound it with encounter distance tiers.
+        if(EventNeoPowerOwned(ai))return native;
+        if(W2CRaceVehicle(ai,racer,player,EventNeoLocalPlayer())){
+            // The event loader can call the same idempotent native mirror.
+            // This path also covers W2C races when that ASI is absent.
+            MirrorStandaloneRaceJunkman(ai,racer,player,now);
+            const auto delta=battle::Sub({player.position.x,player.position.y,player.position.z},{racer.position.x,racer.position.y,racer.position.z});
+            const float gap=battle::Length(delta);
+            // Direct map guidance releases WRoadNav's native query. Its valid
+            // flag and player heading cannot gate power on a separate branch.
+            // Apply the configured first tier to every running race opponent;
+            // larger gaps use the same NFRR tiers. Native brakes still own turns.
+            if(std::isfinite(gap)){
+                const float result=ScaleEncounterPowerTerm(native,g_settings.encounterPowerScales[race_power::Tier(gap)]);
+                if(result!=native)++g_encounterPowerCalls;
+                return result;
+            }
+        }
+    }
     const auto refreshed=g_encounterPowerRefresh.load(std::memory_order_acquire);
     const float scale=g_encounterPowerScale.load(std::memory_order_acquire);
     if(scale<=1||!refreshed||now<refreshed||now-refreshed>250) return native;
@@ -46,8 +81,8 @@ float __fastcall EncounterPowerHook(void* cheater,void*) {
     const float native=g_originalEncounterCheat(cheater);
     return ApplyEncounterPowerBoost(cheater,caller,native,GetTickCount64());
 }
-void InstallEncounterPowerBoost() noexcept {
-    if(!g_battleSurface||!g_settings.encounterSignalEnabled||!g_encounterSkillInstalled) return;
+void InstallEncounterPowerBoost(bool editorRaceOnly=false) noexcept {
+    if(!g_battleSurface||(!editorRaceOnly&&!g_encounterSkillInstalled)) return;
     struct Guard {std::uintptr_t va;const char* bytes;unsigned size;};
     const Guard guards[]={
         {0x00409390,"\x51\xd9\x41\x40\xd8\x41\x3c",7},

@@ -100,9 +100,9 @@
         std::array<unsigned char,0x800> ai{};
         std::array<unsigned char,0x300> nav{};
         std::array<unsigned char,0x40> goal{},action{},target{};
-        const std::size_t slots[]={kSlotPosition,kSlotHeading,kSlotSpeed,kSlotOffScreenTime,kSlotOnScreenTime};
+        const std::size_t slots[]={kSlotPosition,kSlotComputeHeading,kSlotSpeed,kSlotOffScreenTime,kSlotOnScreenTime};
         std::array<void*,5> savedSlots{};
-        for(unsigned i=0;i<5;++i){savedSlots[i]=table[slots[i]];table[slots[i]]=i<2?reinterpret_cast<void*>(&Alpha32Vector):reinterpret_cast<void*>(&Alpha32Float);}
+        for(unsigned i=0;i<5;++i){savedSlots[i]=table[slots[i]];table[slots[i]]=i==0?reinterpret_cast<void*>(&Alpha32Vector):(i==1?reinterpret_cast<void*>(&Alpha32Heading):reinterpret_cast<void*>(&Alpha32Float));}
         put(car,0,reinterpret_cast<std::uintptr_t>(table));put(car,4,123u);put(car,8,unsigned(kDriverRacer));
         put(car,12,reinterpret_cast<std::uintptr_t>(&simable));put(car,0x54,reinterpret_cast<std::uintptr_t>(ai.data()+0x4C));
         put(ai,0,Address(kRacecarPrimaryVtable));put(ai,0x4C,Address(kRacecarIVehicleAIVtable));put(ai,0x7C4,Address(0x008925B4));

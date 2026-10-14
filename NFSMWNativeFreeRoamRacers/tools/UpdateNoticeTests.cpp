@@ -32,7 +32,8 @@ int main(int argc,char** argv) {
         expect(!nfrr_target::Find(target.size+1,target.sha256),"wrong executable size rejected");
         expect(!nfrr_target::Find(target.size,std::string(64,'0')),"unknown executable hash rejected");
     }
-    expect(!nfrr_target::Find(nfrr_target::targets[0].size,nfrr_target::targets[1].sha256),"crossed target size/hash rejected");
+    for(const auto& a:nfrr_target::targets)for(const auto& b:nfrr_target::targets)
+        if(a.size!=b.size)expect(!nfrr_target::Find(a.size,b.sha256),"crossed target size/hash rejected");
     constexpr auto repo="Zakkey250/MW-NativeFreeRoamRacer";
     constexpr auto prefix="MW-NativeFreeRoamRacer-";
     auto row=[&](std::string tag,bool pre=true){return json{{"tag_name",tag},{"draft",false},{"prerelease",pre},

@@ -3,6 +3,72 @@
 using PerformanceLevels = std::array<std::uint32_t,7>;
 constexpr PerformanceLevels kShopPackageCounts{3,4,3,4,4,3,3}; // 007A4D40 jump table
 
+bool ReadVehicleJunkman(void* vehicle,std::uint32_t* mask) noexcept {
+    if (!vehicle || !mask) return false;
+    void* record = nullptr;
+    std::uint32_t raw = 0;
+    if (!SafeRead(static_cast<unsigned char*>(vehicle)+0x38,&record) || !record ||
+        !SafeRead(static_cast<unsigned char*>(record)+
+            offsetof(NFSPluginSDK::MW05::FECustomizationRecord,mInstalledPhysics)+
+            offsetof(NFSPluginSDK::MW05::Physics::Upgrades::Package,mJunkman),&raw)) return false;
+    *mask = junkman::Mask(raw);
+    return true;
+}
+
+bool JunkmanSurfaceAvailable() noexcept {
+    const std::array<unsigned char,8> canInstall{0x64,0xA1,0,0,0,0,0x6A,0xFF};
+    const std::array<unsigned char,7> setPart{0x6A,0xFF,0x68,0x90,0xAB,0x87,0};
+    std::array<unsigned char,8> actualCan{};
+    std::array<unsigned char,7> actualSet{};
+    return SafeRead(reinterpret_cast<void*>(Address(0x677FE0)),&actualCan) &&
+        SafeRead(reinterpret_cast<void*>(Address(0x678150)),&actualSet) &&
+        actualCan==canInstall && actualSet==setPart;
+}
+
+bool MirrorJunkmanToRaceAI(void* playerVehicle,void* aiVehicle,
+                           unsigned* playerCount,unsigned* aiCount) noexcept {
+    if (playerCount) *playerCount=0;
+    if (aiCount) *aiCount=0;
+    if (!playerVehicle || !aiVehicle || playerVehicle==aiVehicle || !JunkmanSurfaceAvailable()) return false;
+    std::uint32_t player=0,installed=0;
+    if (!ReadVehicleJunkman(playerVehicle,&player) || !ReadVehicleJunkman(aiVehicle,&installed)) return false;
+    if (playerCount) *playerCount=junkman::Count(player);
+    if (aiCount) *aiCount=junkman::Count(installed);
+    if (!player) return true;
+    auto* attributes=reinterpret_cast<NFSPluginSDK::MW05::Attrib::Gen::pvehicle*>(static_cast<unsigned char*>(aiVehicle)+0x24);
+    NFSPluginSDK::MW05::Attrib::Gen::pvehicle observed{};
+    if (!SafeRead(attributes,&observed) || !observed.mCollection || !observed.mLayoutPtr) return false;
+    using Upgrades=NFSPluginSDK::MW05::Physics::Upgrades::Package;
+    using Type=NFSPluginSDK::MW05::Physics::Upgrades::Type;
+    __try {
+        const auto target=junkman::Plan(player,installed,[&](unsigned type) {
+            return Upgrades::CanInstallJunkman(*attributes,Type(type));
+        });
+        auto install=[&](unsigned type) {
+            const auto bit=1u<<type;
+            if ((installed&bit) || !Upgrades::CanInstallJunkman(*attributes,Type(type))) return;
+            Upgrades::SetJunkman(*attributes,Type(type));
+            installed|=bit;
+        };
+        for (unsigned type=0;type<7 && junkman::Count(installed)<junkman::Count(player);++type)
+            if (target&(1u<<type)) install(type);
+        for (unsigned type=0;type<7 && junkman::Count(installed)<junkman::Count(player);++type) {
+            if (!(target&(1u<<type))) install(type);
+        }
+        // Keep the private AI customization record consistent with the live
+        // attribute instance. Never write the player's record or global bank.
+        if (installed) {
+            void* record=nullptr;
+            if (SafeRead(static_cast<unsigned char*>(aiVehicle)+0x38,&record) && record)
+                *reinterpret_cast<std::uint32_t*>(static_cast<unsigned char*>(record)+
+                    offsetof(NFSPluginSDK::MW05::FECustomizationRecord,mInstalledPhysics)+
+                    offsetof(Upgrades,mJunkman))=installed;
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
+    if (aiCount) *aiCount=junkman::Count(installed);
+    return junkman::Count(installed)>=junkman::Count(player);
+}
+
 template<class Unlocked>
 PerformanceLevels SelectCareerPerformance(const PerformanceLevels& maximum,Unlocked unlocked) {
     PerformanceLevels chosen{};
@@ -38,6 +104,9 @@ bool PerformanceSurfaceAvailable() noexcept {
     for(const auto& guard:guards) {
         std::array<std::uint8_t,8> actual{};
         if(!SafeRead(reinterpret_cast<void*>(Address(guard.address)),&actual)||actual!=guard.bytes) {
+            // This exact detour forwards every non-gameplay class unchanged.
+            // Accept only the installed Event ASI owner, never arbitrary E9s.
+            if(guard.address==0x00455FD0&&EventAttributeDetourOwned(guard.address,actual))continue;
             Log(LogLevel::Warning,"PERFORMANCE_SURFACE_MISMATCH address=%08X",guard.address);return false;
         }
     }
@@ -45,7 +114,7 @@ bool PerformanceSurfaceAvailable() noexcept {
 }
 
 enum class PerformanceEligibility { Deferred, Ready, NoNitrous, CoolingDown, InvalidReference };
-struct CareerPerformancePlan { PerformanceLevels maximum{},chosen{}; };
+struct CareerPerformancePlan { PerformanceLevels maximum{},chosen{};std::uint32_t junkmanEligible=0; };
 
 #include "PerformanceRetry.inl"
 #include "PerformanceReferences.inl"
@@ -100,6 +169,9 @@ PerformanceEligibility ReadCareerPerformancePlan(std::uint32_t key,CareerPerform
                 });
                 if(eligibility!=PerformanceEligibility::Ready) return eligibility;
                 if(!ValidateNativePerformanceReferences(key,&instance,*plan))return PerformanceEligibility::InvalidReference;
+                if(JunkmanSurfaceAvailable())for(unsigned type=0;type<7;++type)
+                    if(Physics::Upgrades::Package::CanInstallJunkman(instance,Physics::Upgrades::Type(type)))
+                        plan->junkmanEligible|=1u<<type;
                 success=true;
             }
         } __finally {

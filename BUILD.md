@@ -45,3 +45,12 @@ python -m pip install pyinstaller==6.16.0
 The build excludes decoder binaries. For extraction, separately obtain `vgmstream-cli.exe`, its DLLs and license notices. The script writes a new timestamped build directory under `artifacts`; it does not erase previous packages. Keep the generated EXE, `_internal` and `tools` directories together. Source execution uses `python app.py`; put the decoder bundle in `tools/vgmstream` for the default relative lookup.
 
 64bit Python（Tkinter付き）・PyInstallerでビルドします。デコーダーは同梱せず、実際の抽出時に別途配置します。ビルドは`artifacts`配下に日時別で作成し、既存配布物は削除しません。EXEと`_internal`・`tools`は一緒に配置してください。ソース版の既定検索先は`tools/vgmstream`です。
+
+
+## 0.1.2 source layout
+
+The `NFSMWEventLoader/src`, `World2MW/src/NeoAI`, `World2MW/src/NativeLoader` and `integration` support headers in this repository are the minimal compile-time dependency closure for NFRR. Keep their relative paths. They do not include the Event Loader/World2MW runtime or game data; those modules remain optional runtime providers.
+
+Logger coverage uses `tools/LoggingModeTests.cpp` (link/include the NFRR include directory), `tools/ASILoggingLoadTests.cpp`, and isolated directories for each OFF/ON case. Historical `LoggingBatchTests.cpp` describes the old synchronous logger and is not the current logger's acceptance suite. See LOGGING_COVERAGE.md and VALIDATION.md for release checks. Build Release Win32 first before the aggregate cache/AI fixture harness.
+
+Event Loader・World2MW・integrationの同梱サポートヘッダーはNFRRの最小ビルド依存関係です。相対配置を維持してください。本体・ゲーム素材は含まれず、ランタイム連携は任意です。新ロガーの試験はLoggingModeTests/ASILoggingLoadTestsを使用します。旧LoggingBatchTestsは旧方式の履歴です。

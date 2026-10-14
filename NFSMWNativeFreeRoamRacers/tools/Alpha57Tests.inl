@@ -41,10 +41,31 @@
         expect(encounter_weapons::PlayerShockCaller(0x8F89)&&!encounter_weapons::PlayerShockCaller(0x8715),
             "alpha57 shock callback distinct from EMP flip physics");
         const auto oldThread=g_encounterAdapterThread.load();g_encounterAdapterThread=GetCurrentThreadId();
-        g_battle={};g_battle.model.Start(sample);g_battle.player=sample.player.identity;
+        expect(encounter_weapons::RivalEmpTarget(3,0x1000,0x10AC),"streak2 EMP primary matches opponent IVehicle");
+        for(unsigned type:{0u,1u,2u,4u})expect(!encounter_weapons::RivalEmpTarget(type,0x1000,0x10AC),
+            "streak2 police helicopter invalid EMP types excluded even if address matches");
+        expect(!encounter_weapons::RivalEmpTarget(3,0x1001,0x10AC)&&!encounter_weapons::RivalEmpTarget(3,0,0),
+            "streak2 other racer and null EMP target rejected");
+        expect(encounter_weapons::RivalShockTarget(0x2000,0x1000,0x202C,0x102C)&&
+            !encounter_weapons::RivalShockTarget(0x3000,0x1000,0x202C,0x102C)&&
+            !encounter_weapons::RivalShockTarget(0x2000,0x3000,0x202C,0x102C),
+            "streak2 shock requires exact opponent victim and exact player source");
+        g_battle={};g_battle.model.Start(sample);g_battle.player=sample.player.identity;g_battle.rival=sample.rival.identity;
         EncounterSpikeHit(999,11);expect(!g_battle.weaponForfeit,"alpha57 other source spike cannot disqualify player");
         EncounterSpikeHit(1,999);expect(!g_battle.weaponForfeit,"alpha57 reused source identity rejected");
-        EncounterSpikeHit(1,11);expect(g_battle.weaponForfeit,"alpha57 player spike actual-hit notification queues loss");
+        EncounterSpikeHit(1,11);expect(!g_battle.weaponForfeit,"streak2 legacy spike without victim cannot forfeit");
+        for(unsigned weapon=1;weapon<=3;++weapon) {
+            g_battle.weaponForfeit=false;
+            RecordEncounterWeaponHit(weapon,{99,999,9999});
+            expect(!g_battle.weaponForfeit,"streak2 police or unrelated racer hit cannot forfeit");
+            auto recycled=g_battle.rival;recycled.key++;
+            RecordEncounterWeaponHit(weapon,recycled);
+            expect(!g_battle.weaponForfeit,"streak2 recycled rival address does not qualify");
+            RecordEncounterWeaponHit(weapon,g_battle.player);
+            expect(!g_battle.weaponForfeit,"streak2 player is not opponent");
+            RecordEncounterWeaponHit(weapon,g_battle.rival);
+            expect(g_battle.weaponForfeit,"streak2 exact rival hit qualifies for all weapons");
+        }
         g_battle={};g_encounterAdapterThread=oldThread;
         encounter_weapons::EmpSchedule schedule;
         expect(!schedule.Start(1),"alpha57 racer EMP has initial cooldown");

@@ -1,4 +1,4 @@
 #pragma once
 namespace native_freeroam {
-inline constexpr char kVersion[]="0.1.1";
+inline constexpr char kVersion[]="0.1.2";
 }

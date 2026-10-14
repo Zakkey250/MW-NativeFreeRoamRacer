@@ -1,4 +1,10 @@
 #include "Runtime.h"
+#include "RuntimeConfig.h"
+#include "MarkerRetry.h"
+#include "PromptCallSurface.h"
+#include "../../NFSMWEventLoader/src/NeoDriverBridge.h"
+#include "RacePowerPolicy.h"
+#include "../include/JunkmanMirrorPolicy.h"
 #include "ExecutableTargets.h"
 
 #include "Logging.h"
@@ -20,6 +26,7 @@
 #include <NFSPluginSDK/Game.MW05/Types/WRoadNav.h>
 #include "EncounterText.h"
 #include "EncounterReward.h"
+#include "EncounterWager.h"
 #include "EncounterWeapons.h"
 #include "EncounterWave.h"
 
@@ -88,7 +95,7 @@ constexpr std::uintptr_t kAIVehicleSetGoal = 0x00422480;
 constexpr std::uintptr_t kGoalChooseAction = 0x0042B070;
 constexpr std::uintptr_t kGetPosition = 0x00688340;
 constexpr std::uintptr_t kGetSpeed = 0x006881A0;
-constexpr std::uintptr_t kGetHeading = 0x00688250;
+constexpr std::uintptr_t kComputeHeading = 0x00670700;
 constexpr std::uintptr_t kSetDriverClass = 0x006876E0;
 constexpr std::uintptr_t kGetDriverClass = 0x006880B0;
 constexpr std::uintptr_t kGetOffScreenTime = 0x00688120;
@@ -130,7 +137,7 @@ constexpr std::size_t kSlotActivateVehicle = 32;
 constexpr std::size_t kSlotDeactivateVehicle = 33;
 constexpr std::size_t kSlotSpeed = 35;
 constexpr std::size_t kSlotAIVehicle = 43;
-constexpr std::size_t kSlotHeading = 45;
+constexpr std::size_t kSlotComputeHeading = 46;
 constexpr std::size_t kSlotAIResetVehicleToRoadNav = 22;
 constexpr std::size_t kSlotAISetSpawned = 34;
 constexpr std::size_t kSlotAIGetCurrentRoad = 45;
@@ -189,6 +196,7 @@ struct Settings {
     bool backgroundPoliceEnabled = true;
     std::array<float,3> encounterPowerScales{1.50f,1.75f,2.00f};
     encounter_custom::Mode encounterAIMode=encounter_custom::Mode::Stable;
+    bool encounterWinStreak=false;
     float customAILeaderPowerScale=1.25f;
     float cruisingSpeedPercent=60.0f;
     float startSpeedToleranceKmh=10.0f;
@@ -213,7 +221,7 @@ struct Settings {
     float missingGraceSeconds = 2.0f;
     float telemetryIntervalSeconds = 5.0f;
     bool deepAudioDiagnostics = false;
-    bool frameTimingDiagnostics = true;
+    bool frameTimingDiagnostics = false;
     float retirementOffScreenSeconds = 1.0f;
     float hardRetirementMarginMeters = 500.0f;
 };
@@ -251,6 +259,7 @@ std::vector<VehicleSnapshot> g_vehicleScratch;
 AnchorSearch g_anchorSearch;
 NFSPluginSDK::MW05::GManager* g_markerManager = nullptr;
 std::array<MarkerSlot, kMaximumRacersLimit> g_markers{};
+nfrr_marker::Retry g_markerRetry{};
 std::array<std::atomic<std::uintptr_t>, kMaximumRacersLimit>
     g_protectedSimables{};
 std::array<std::atomic<std::uintptr_t>, kMaximumRacersLimit>
@@ -278,6 +287,10 @@ bool g_faulted = false;
 std::uint32_t g_consecutiveSpawnFailures = 0;
 float g_spawnFailureBackoffSeconds = 0.0f;
 std::atomic<ExternalPopulationTickFn> g_externalPopulationTick{nullptr};
+// Keep the population provider's V1 slot independent from frame observers.
+// World adapters must keep updating during races and frontend transitions too.
+std::array<std::atomic<ExternalPopulationTickFn>, 4> g_frameObservers{};
+std::atomic<bool> g_frameObserverReady{false};
 
 bool IsAdvancedCivilianVehicle(const void* vehicle) noexcept {
     // Optional, lazy bridge.  The civilian ASI may load before or after this
@@ -401,6 +414,7 @@ bool ReadLbAudioExpansionSetting(const wchar_t* path) noexcept {
     return GetPrivateProfileIntW(L"LimitBreaker",L"LBEngineAudioExpansion",legacy,path)==1;
 }
 
+static bool g_eventSelectionOnly=false;
 void LoadSettings() noexcept {
     wchar_t modulePath[MAX_PATH]{};
     HMODULE self = nullptr;
@@ -414,8 +428,17 @@ void LoadSettings() noexcept {
     if (extension != nullptr)
         wcscpy_s(extension, MAX_PATH - (extension - modulePath), L".ini");
 
+    const auto editorPath=nfrr_config::EditorPath(modulePath);
+    const auto settingsPath=nfrr_config::SettingsPath(modulePath);
+    wcscpy_s(modulePath,settingsPath.c_str());
+    const bool editorRequested=GetPrivateProfileIntW(L"Editor",L"EventSelectionOnly",0,modulePath)!=0;
     g_settings.enabled =
-        GetPrivateProfileIntW(L"Population", L"Enabled", 1, modulePath) != 0;
+        GetPrivateProfileIntW(L"Population", L"Enabled", editorRequested?0:1, modulePath) != 0;
+    const bool editorFallback=GetPrivateProfileIntW(L"Editor",L"EventSelectionOnly",0,editorPath.c_str())!=0;
+    g_eventSelectionOnly=nfrr_config::SelectionOnly(editorRequested||editorFallback,g_settings.enabled);
+    Log(LogLevel::Info,"NFRR_CONFIG population=%u editorOnly=%u settings=%ls",
+        unsigned(g_settings.enabled),unsigned(g_eventSelectionOnly),modulePath);
+    Log(LogLevel::Info,"UI_RECOVERY_POLICY markerRetryMs=1000-8000 markerWarningMs=30000 sharedManagerBackoff=1 fullTableNativeCalls=0 promptEventLoaderAdapter=1 versionGate=0");
     g_settings.encounterSignalEnabled =
         GetPrivateProfileIntW(L"Encounter", L"SignalEnabled", 1, modulePath) != 0;
     wchar_t encounterLanguage[16]{};
@@ -490,10 +513,14 @@ void LoadSettings() noexcept {
         ReadFloatSetting(modulePath, L"Diagnostics", L"TelemetryIntervalSeconds",
                          5.0f),
         1.0f, 60.0f);
-    g_settings.deepAudioDiagnostics = GetPrivateProfileIntW(
-        L"Diagnostics", L"DeepAudioDiagnostics", 0, modulePath) == 1;
-    g_settings.frameTimingDiagnostics = GetPrivateProfileIntW(
-        L"Diagnostics", L"FrameTiming", 1, modulePath) == 1;
+    const auto diagnosticFlag=[&](const wchar_t* key) noexcept {
+        if(!LoggingEnabled())return false;
+        wchar_t value[8]{};
+        GetPrivateProfileStringW(L"Diagnostics",key,L"0",value,8,modulePath);
+        return wcscmp(value,L"1")==0;
+    };
+    g_settings.deepAudioDiagnostics = diagnosticFlag(L"DeepAudioDiagnostics");
+    g_settings.frameTimingDiagnostics = diagnosticFlag(L"FrameTiming");
 }
 
 #include "PerformanceDiagnostics.inl"
@@ -634,13 +661,18 @@ bool ReadVehicle(void* vehicle, VehicleSnapshot* output) noexcept {
         const auto* position =
             reinterpret_cast<const NFSPluginSDK::MW05::UMath::Vector3* (
                 __thiscall*)(void*)>(vtable[kSlotPosition])(vehicle);
-        const auto* heading =
-            reinterpret_cast<const NFSPluginSDK::MW05::UMath::Vector3* (
-                __thiscall*)(void*)>(vtable[kSlotHeading])(vehicle);
-        if (position == nullptr || heading == nullptr) return false;
+        // Slot 45 returns LOCAL VELOCITY, not a world-space heading. Its
+        // magnitude is speed and its sign does not encode the car's world yaw.
+        // ComputeHeading (slot 46) writes a normalized world vector via out-param.
+        NFSPluginSDK::MW05::UMath::Vector3 heading{};
+        reinterpret_cast<void(__thiscall*)(void*,NFSPluginSDK::MW05::UMath::Vector3*)>(
+            vtable[kSlotComputeHeading])(vehicle,&heading);
+        const auto direction=FromUMath(heading);
+        const float norm=std::sqrt(direction.x*direction.x+direction.y*direction.y+direction.z*direction.z);
+        if(position==nullptr||!std::isfinite(norm)||norm<.9f||norm>1.1f)return false;
         output->pointer = vehicle;
         output->position = FromUMath(*position);
-        output->heading = FromUMath(*heading);
+        output->heading = {direction.x/norm,direction.y/norm,direction.z/norm};
         output->speed = std::abs(reinterpret_cast<float(__thiscall*)(void*)>(
             vtable[kSlotSpeed])(vehicle));
         output->vehicleKey =
@@ -873,6 +905,27 @@ std::uint32_t __fastcall CacheQueryHook(void* cache, void*,
     return 0; // eVehicleCacheResult::Want
 }
 
+// Diagnostic only: native headers are captured without changing allocation,
+// eviction, skin ownership or calling native resource functions. Raw words are
+// deliberately not labelled as counters until their live layout is validated.
+void LogRenderResources(const char* stage,const void* vehicle=nullptr) noexcept {
+    if(!LoggingEnabled())return;
+    std::uint32_t skinMask=0,arenaBase=0,arenaBytes=0;
+    const bool maskOK=SafeRead(reinterpret_cast<void*>(Address(0x903690)),&skinMask);
+    const bool arenaOK=SafeRead(reinterpret_cast<void*>(Address(0x9B2C60)),&arenaBase)&&
+        SafeRead(reinterpret_cast<void*>(Address(0x9B2C64)),&arenaBytes);
+    Log(LogLevel::Info,"RENDER_RESOURCE stage=%s vehicle=%p skinMaskValid=%u freeSkinMask=%08X arenaValid=%u arena=%08X arenaBytes=%u readOnly=1",
+        stage,vehicle,unsigned(maskOK),skinMask,unsigned(arenaOK),arenaBase,arenaBytes);
+    for(unsigned i=0;i<4;++i) {
+        std::uintptr_t pool=0;std::array<std::uint32_t,16> header{};
+        const bool valid=SafeRead(reinterpret_cast<void*>(Address(0x9B0A00+i*4)),&pool)&&pool&&
+            SafeRead(reinterpret_cast<void*>(pool),&header);
+        Log(LogLevel::Info,"RENDER_POOL stage=%s index=%u valid=%u pool=%08X raw=%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X,%08X",
+            stage,i,unsigned(valid),unsigned(pool),header[0],header[1],header[2],header[3],header[4],header[5],header[6],header[7],
+            header[8],header[9],header[10],header[11],header[12],header[13],header[14],header[15]);
+    }
+}
+
 bool KillVehicle(void* vehicle, const char* reason) noexcept {
     if (!IsExpectedVehicle(vehicle)) return false;
     void** vehicleVtable = nullptr;
@@ -887,7 +940,9 @@ bool KillVehicle(void* vehicle, const char* reason) noexcept {
             reinterpret_cast<std::uintptr_t>(simableVtable[2]) !=
                 Address(kKillSimable))
             return false;
+        LogRenderResources("before-retire",vehicle);
         reinterpret_cast<void(__thiscall*)(void*)>(simableVtable[2])(simable);
+        LogRenderResources("after-retire",vehicle); // Address only; never dereferenced.
         Log(LogLevel::Info, "Released managed vehicle=%08X reason=%s",
             static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(vehicle)),
             reason != nullptr ? reason : "unspecified");
@@ -951,6 +1006,7 @@ void RefreshMarkerManager() noexcept {
         slot.visible = false;
     }
     g_markerManager = manager;
+    g_markerRetry.Reset();
     Log(LogLevel::Info, "Gameplay marker manager=%08X",
         static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(manager)));
 }
@@ -967,9 +1023,19 @@ void UpdateMarker(MarkerSlot& slot, const Vec3& position,
         slot.icon = nullptr;
         slot.visible = false;
     }
+    const auto now = GetTickCount64();
+    if (slot.icon == nullptr && !g_markerRetry.Ready(now)) return;
     __try {
         const auto mapPosition = ToMath(position);
         if (slot.icon == nullptr) {
+            std::uint32_t count = 0;
+            if (!SafeRead(reinterpret_cast<std::uint8_t*>(g_markerManager) +
+                          kGManagerIconCountOffset, &count) || count >= kMaximumIcons) {
+                if (g_markerRetry.Fail(now))
+                    Log(LogLevel::Warning, "MARKER_RETRY reason=icon-table-unavailable count=%u limit=%u retryMs=%llu failures=%u nativeAllocation=0", count, kMaximumIcons,
+                        g_markerRetry.nextAttempt - now, g_markerRetry.failures);
+                return;
+            }
             using AllocateFn = NFSPluginSDK::MW05::GIcon*(__thiscall*)(
                 NFSPluginSDK::MW05::GManager*,
                 NFSPluginSDK::MW05::GIcon::Type,
@@ -979,9 +1045,14 @@ void UpdateMarker(MarkerSlot& slot, const Vec3& position,
                 NFSPluginSDK::MW05::GIcon::Type::RaceRival, mapPosition, 0.0f,
                 false);
             if (slot.icon == nullptr) {
-                Log(LogLevel::Error, "RaceRival marker allocation failed");
+                if (g_markerRetry.Fail(now))
+                    Log(LogLevel::Warning, "MARKER_RETRY reason=allocation-failed count=%u limit=%u retryMs=%llu failures=%u", count, kMaximumIcons,
+                        g_markerRetry.nextAttempt - now, g_markerRetry.failures);
                 return;
             }
+            if (g_markerRetry.failures)
+                Log(LogLevel::Info, "MARKER_RETRY recovered=1 failures=%u", g_markerRetry.failures);
+            g_markerRetry.Reset();
         }
         slot.icon->mPosition = mapPosition;
         auto flags = static_cast<std::uint16_t>(slot.icon->mFlags);
@@ -1003,8 +1074,9 @@ void UpdateMarker(MarkerSlot& slot, const Vec3& position,
                     reinterpret_cast<std::uintptr_t>(slot.owner)));
         slot.visible = true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        Log(LogLevel::Error, "RaceRival marker update faulted code=%08X",
-            static_cast<unsigned int>(GetExceptionCode()));
+        if (g_markerRetry.Fail(now))
+            Log(LogLevel::Warning, "MARKER_RETRY reason=update-fault code=%08X retryMs=%llu",
+                static_cast<unsigned int>(GetExceptionCode()), g_markerRetry.nextAttempt - now);
         slot.icon = nullptr;
         slot.visible = false;
     }
@@ -1370,8 +1442,18 @@ bool SpawnAtAnchor(const VehicleSnapshot& anchor,const VehicleSnapshot& player,b
     const auto finalStart=PerformanceNow();
     CareerPerformancePlan performancePlan{};
     const auto eligibility=ReadCareerPerformancePlan(vehicleKey,&performancePlan);
-    if(eligibility==PerformanceEligibility::Ready)
+    if(eligibility==PerformanceEligibility::Ready) {
         WriteCareerPerformancePlan(vehicleKey,performancePlan,&customization);
+        std::uint32_t playerJunkman=0;
+        if(ReadVehicleJunkman(player.pointer,&playerJunkman)) {
+            const auto aiJunkman=junkman::Plan(playerJunkman,0,[&](unsigned type) {
+                return (performancePlan.junkmanEligible&(1u<<type))!=0;
+            });
+            customization.mInstalledPhysics.mJunkman=static_cast<NFSPluginSDK::MW05::JunkmanParts>(aiJunkman);
+            Log(LogLevel::Info,"PERFORMANCE_JUNKMAN_SPAWN player_parts=%u ai_parts=%u private_record=1",
+                junkman::Count(playerJunkman),junkman::Count(aiJunkman));
+        }
+    }
     RecordPerformance(PerfStage::SpawnFinalize,finalStart,PerformanceNow());
     if(eligibility!=PerformanceEligibility::Ready) {
         ResetSpawnPreparation();*candidateWait=true;return false;
@@ -1435,6 +1517,7 @@ bool SpawnAtAnchor(const VehicleSnapshot& anchor,const VehicleSnapshot& player,b
             static_cast<unsigned>(protectedCount));
         return false;
     }
+    LogRenderResources("before-construct",player.pointer);
     const auto constructStart = PerformanceNow();
     auto* created = ConstructTrafficSeed(rawStatus, vehicleKey, nativeDirection,
                                          nativePosition, &customization);
@@ -1442,6 +1525,7 @@ bool SpawnAtAnchor(const VehicleSnapshot& anchor,const VehicleSnapshot& player,b
     EndConstructionProtection("native-racer");
     // Target 0x68934D allocates 0x198 bytes; 0x689361 copies all 0x66 DWORDs.
     // PVehicle owns its copy. No pointer to the prepared record survives Construct.
+    LogRenderResources("after-construct",player.pointer);
     if (created == nullptr) return false;
     auto* vehicle = static_cast<NFSPluginSDK::MW05::IVehicle*>(created);
     if (ConstructionContains(protectedVehicles,protectedCount,vehicle)) {
@@ -1744,6 +1828,7 @@ void LogTelemetryRows(const VehicleSnapshot& player,
                       const std::vector<VehicleSnapshot>& vehicles) {
     std::size_t visibleMarkers = 0;
     LogAudioPoolHealth();
+    LogRenderResources("periodic-player",player.pointer);
     for (const auto& marker : g_markers)
         if (marker.visible) ++visibleMarkers;
     Log(LogLevel::Info, "TELEMETRY managed=%u/%u markers=%u vehicles=%u populationIdleCalls=%llu populationReserveCalls=%llu populationReleaseCalls=%llu populationReleaseSkipped=%llu",
@@ -1849,12 +1934,14 @@ void ClearWorld(const bool killManaged) noexcept {
     ResetBackgroundPolice();
     // No cached vehicle dereference after the world has gone away.
     EndEncounterBattle(false,true);
+    ResetEncounterWager();
     ResetEncounterSignal();
     g_streamRetentionEnabled.store(false, std::memory_order_release);
     for (std::size_t index = g_racers.size(); index-- > 0;)
         RemoveRacer(index, "free-roam world ended", killManaged);
     for (auto& marker : g_markers) marker = {};
     g_markerManager = nullptr;
+    g_markerRetry.Reset();
     g_palette.clear();
     g_vehicleBag.clear();
     g_palettePlayerKey = 0;
@@ -1876,11 +1963,15 @@ void ClearWorld(const bool killManaged) noexcept {
 }
 
 void Update() {
+    if(g_eventSelectionOnly){if(!g_faulted){CaptureFrontendCatalog();AdvanceVehicleCatalog();}return;}
     UpdateEncounterVoiceVolume();
     if (g_faulted) return;
     CaptureFrontendCatalog(); // Must run before the free-roam-only guard.
     const float elapsed = DeltaSeconds();
     if (!IsFreeRoam()) {
+        // Direct menu -> event also needs the calibrated catalog. Each call
+        // advances at most one collection; never scan inside a spawn hook.
+        AdvanceVehicleCatalog();
         if (g_worldReady) {
             ClearWorld(true);
             Log(LogLevel::Info, "Free-roam world ended and pilot racer released");
@@ -1950,6 +2041,29 @@ int __cdecl DisplayFrameHook() {
             static_cast<unsigned int>(GetExceptionCode()));
     }
     const auto updateEnd = FrameClockNow();
+    // Event ASI owns its runtime lifecycle. This existing display-frame
+    // owner provides a late-loaded callback without another native detour.
+    using EventFrame = void(__cdecl*)();
+    static EventFrame eventFrame = nullptr;
+    if (!eventFrame) {
+        const auto events = GetModuleHandleW(L"NFSMWEventLoader.asi");
+        if (events) eventFrame = reinterpret_cast<EventFrame>(GetProcAddress(events,"MWEL_FrameV1"));
+    }
+    if (eventFrame) {
+        __try { eventFrame(); }
+        __except (EXCEPTION_EXECUTE_HANDLER) { eventFrame = nullptr; }
+    }
+    for (auto& slot : g_frameObservers) {
+        if (const auto observer = slot.load(std::memory_order_acquire)) {
+            __try { observer(); }
+            __except (EXCEPTION_EXECUTE_HANDLER) {
+                auto expected = observer;
+                slot.compare_exchange_strong(expected, nullptr);
+                Log(LogLevel::Error, "Frame observer faulted code=%08X; observer detached",
+                    static_cast<unsigned>(GetExceptionCode()));
+            }
+        }
+    }
     if (const auto externalTick =
             g_externalPopulationTick.load(std::memory_order_acquire)) {
         __try {
@@ -2046,8 +2160,8 @@ bool ValidateSurface(std::string* error) noexcept {
             Address(kGetSpeed) ||
         reinterpret_cast<std::uintptr_t>(vehicleVtable[kSlotAIVehicle]) !=
             Address(kGetAIVehicle) ||
-        reinterpret_cast<std::uintptr_t>(vehicleVtable[kSlotHeading]) !=
-            Address(kGetHeading) ||
+        reinterpret_cast<std::uintptr_t>(vehicleVtable[kSlotComputeHeading]) !=
+            Address(kComputeHeading) ||
         reinterpret_cast<std::uintptr_t>(
             goalVtable[kGoalChooseActionSlot]) != Address(kGoalChooseAction)) {
         if (error != nullptr) *error = "vtable guard failed";
@@ -2067,6 +2181,18 @@ NFRR_RegisterPopulationTickV1(void(__cdecl* tick)()) noexcept {
 }
 
 extern "C" __declspec(dllexport) int __cdecl
+NFRR_RegisterFrameObserverV1(void(__cdecl* tick)()) noexcept {
+    if (!tick || !g_frameObserverReady.load(std::memory_order_acquire)) return 0;
+    for (auto& slot : g_frameObservers)
+        if (slot.load(std::memory_order_acquire) == tick) return 1;
+    for (auto& slot : g_frameObservers) {
+        ExternalPopulationTickFn empty = nullptr;
+        if (slot.compare_exchange_strong(empty, tick)) return 1;
+    }
+    return 0;
+}
+
+extern "C" __declspec(dllexport) int __cdecl
 NFRR_BeginVehicleConstructionProtectionV1(
     const void* const* vehicles, const unsigned count) noexcept {
     return BeginConstructionProtection(vehicles, count) ? 1 : 0;
@@ -2083,6 +2209,7 @@ bool StartupNoticeAllowed() noexcept {
     return SafeRead(reinterpret_cast<void*>(Address(kGameFlowState)),&flow)&&flow<6;
 }
 
+#include "../../integration/World2MWPortableHost.h"
 bool VerifyHostExecutable() noexcept {
     wchar_t executablePath[MAX_PATH]{};
     if (GetModuleFileNameW(nullptr, executablePath, MAX_PATH) == 0) {
@@ -2092,7 +2219,11 @@ bool VerifyHostExecutable() noexcept {
     const wchar_t* fileName = wcsrchr(executablePath, L'\\');
     fileName = fileName == nullptr ? executablePath : fileName + 1;
     WIN32_FILE_ATTRIBUTE_DATA attributes{};
-    if (_wcsicmp(fileName, kExpectedExecutableName) != 0 ||
+    // The private W2MW installation uses an alias for the identical verified
+    // NFSPatcher executable. Keep the production name and full byte checks.
+    const bool worldAlias = _wcsicmp(fileName, L"World2MW.exe") == 0 &&
+        (wcsstr(executablePath, L"\\World2MW\\sandbox\\Game\\World2MW.exe") != nullptr || World2MWPortableHost());
+    if ((_wcsicmp(fileName, kExpectedExecutableName) != 0 && !worldAlias) ||
         !GetFileAttributesExW(executablePath, GetFileExInfoStandard,
                               &attributes)) {
         Log(LogLevel::Error, "Unsupported host name; fail-closed");
@@ -2122,10 +2253,25 @@ bool VerifyHostExecutable() noexcept {
 
 bool InstallRuntime() noexcept {
     LoadSettings();
-    if (!g_settings.enabled) {
+    if (!g_settings.enabled && !g_eventSelectionOnly) {
         Log(LogLevel::Info,
             "Population disabled by configuration; no hook installed");
         return true;
+    }
+    if(g_eventSelectionOnly){
+        const unsigned char guard[]={0xA1,0x50,0x58,0x92,0,0x85,0xC0,0x7E,7,0x48,0xA3,0x50,0x58,0x92,0,0xC3};
+        auto target=reinterpret_cast<void*>(Address(kMainDisplayFrame));
+        if(g_base!=kPreferredBase||memcmp(target,guard,sizeof(guard)))return false;
+        g_catalog.reserve(1024);g_palette.reserve(5);g_vehicleBag.reserve(5);
+        auto status=MH_Initialize();if(status!=MH_OK&&status!=MH_ERROR_ALREADY_INITIALIZED)return false;
+        if(MH_CreateHook(target,&DisplayFrameHook,reinterpret_cast<void**>(&g_originalDisplayFrame))!=MH_OK)return false;
+        if(MH_EnableHook(target)!=MH_OK){MH_RemoveHook(target);return false;}
+        g_frameObserverReady.store(true,std::memory_order_release);
+        // The Web route provider also needs direct guidance when installed
+        // without the free-roam population feature. Keep cache/audio untouched.
+        g_battleSurface=ValidateEncounterBattleSurface();
+        if(g_battleSurface){InstallEncounterPathHook(true);InstallCustomDriveHook();InstallEncounterPowerBoost(true);}
+        Log(LogLevel::Info,"MW_EDITOR_EVENT_SELECTION_ACTIVE population=0 native_cache_and_audio_preserved=1 map_route_drive=%u",unsigned(g_customDriveInstalled&&g_encounterPathInstalled));return true;
     }
     std::string error;
     if (!ValidateSurface(&error)) {
@@ -2208,6 +2354,7 @@ bool InstallRuntime() noexcept {
         return false;
     }
     Log(LogLevel::Info,"SOLID_LIFETIME ACTIVE nativeUnload=00507460 exactPointerAliases=1 modelBlacklist=0 lbRequired=0");
+    g_frameObserverReady.store(true,std::memory_order_release);
     // Optional observation hook is enabled separately: failure must not stop population.
     if (CreateAudioFlowHook()) {
         g_audioFlowEnabled = MH_EnableHook(reinterpret_cast<void*>(Address(kAudioFlowUpdate))) == MH_OK;
@@ -2223,7 +2370,8 @@ bool InstallRuntime() noexcept {
     InitializeEncounterCatchupProbe();
     InstallEncounterPowerBoost();
     InstallEncounterMinimapHook();
-    InstallEncounterPathHook();
+    // Event guidance and NeoAI road ownership are independent of battles.
+    InstallEncounterPathHook(true);
     InstallCustomDriveHook();
     InstallCustomSpeedHook();
     InstallEncounterSignalHooks();
@@ -2241,9 +2389,60 @@ void StopEncounterVoiceForProcessExit() noexcept {
     if(g_voice) {g_voice->stop=true;SetEvent(g_voice->wake);}
 }
 
+// Event adapter shares only validated selection values. It creates no cars,
+// does not modify the roaming shuffle bag, and holds no world references.
+std::uint32_t ReadEventCareerPlayerKey() noexcept {
+    __try {
+        auto* database=NFSPluginSDK::MW05::cFrontEndDatabase::Get();
+        if(!database || !database->bProfileLoaded){Log(LogLevel::Info,"EVENT_PLAYER_LOOKUP database=%p loaded=%u",database,unsigned(database&&database->bProfileLoaded));return 0;}
+        auto* profile=database->GetUserProfile();
+        if(!profile){Log(LogLevel::Info,"EVENT_PLAYER_LOOKUP profile=missing");return 0;}
+        auto* record=profile->mPlayersCarStable.GetCarRecordByHandle(profile->mTheCareerSettings.CurrentCar);
+        Log(LogLevel::Info,"EVENT_PLAYER_LOOKUP profile=%p handle=%08X record=%p key=%08X",profile,profile->mTheCareerSettings.CurrentCar,record,record?record->mVehicleKey:0);
+        return record ? record->mVehicleKey : 0;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {Log(LogLevel::Info,"EVENT_PLAYER_LOOKUP exception=%08X",GetExceptionCode());return 0;}
+}
+
+std::uint32_t SelectEventOpponent() {
+    if(g_faulted||!g_catalogFinished||g_catalog.empty())return 0;
+    std::vector<VehicleSnapshot> vehicles;EnumerateVehicles(vehicles);
+    auto human=std::find_if(vehicles.begin(),vehicles.end(),[](const auto& v){return v.driverClass==kDriverHuman;});
+    g_eventPlayerKey=human!=vehicles.end()?human->vehicleKey:ReadEventCareerPlayerKey();
+    if(!g_eventPlayerKey){Log(LogLevel::Info,"EVENT_OPPONENT_DEFER reason=player-key-not-ready human=%u",unsigned(human!=vehicles.end()));return 0;}
+    // Human cars can use preset/derived pvehicle collections. The roaming
+    // palette resolves their model before looking up the ranked stock row.
+    char playerModel[32]{};
+    if(!InspectVehicleAttributes(g_eventPlayerKey,playerModel,nullptr))return 0;
+    auto player=std::find_if(g_catalog.begin(),g_catalog.end(),[&](const auto& c){return c.installed&&_stricmp(c.installed->model,playerModel)==0;});
+    if(player==g_catalog.end()){Log(LogLevel::Info,"EVENT_OPPONENT_DEFER reason=player-not-in-catalog key=%08X",g_eventPlayerKey);return 0;}
+    const auto center=std::size_t(player-g_catalog.begin());
+    const auto width=std::min(EffectiveVehicleVariety(),g_catalog.size());
+    const auto start=WindowStart(g_catalog.size(),center,width);
+    static std::uint32_t lastPlayer=0;static std::vector<std::size_t> bag;
+    if(lastPlayer!=g_eventPlayerKey){bag.clear();lastPlayer=g_eventPlayerKey;}
+    std::vector<std::size_t> eligible;
+    for(std::size_t i=start;i<start+width;++i){CareerPerformancePlan plan{};if(ReadCareerPerformancePlan(g_catalog[i].installed->key,&plan)==PerformanceEligibility::Ready)eligible.push_back(i);}
+    bag.erase(std::remove_if(bag.begin(),bag.end(),[&](auto i){return std::find(eligible.begin(),eligible.end(),i)==eligible.end();}),bag.end());
+    if(bag.empty()){bag=eligible;std::shuffle(bag.begin(),bag.end(),g_random);}
+    if(bag.empty())return 0;
+    auto chosen=bag.back();bag.pop_back();
+    Log(LogLevel::Info,"EVENT_OPPONENT_SELECTED player=%s model=%s key=%08X window=%u-%u careerChecked=1 price50Performance50=1 modelBudget=%u",
+        player->installed->model,g_catalog[chosen].installed->model,g_catalog[chosen].installed->key,unsigned(start+1),unsigned(start+width),unsigned(width));
+    return g_catalog[chosen].installed->key;
+}
 }  // namespace native_freeroam
 
 #pragma comment(linker,"/EXPORT:NFR_PlayerSpikeHitV1=_NFR_PlayerSpikeHitV1")
 extern "C" __declspec(dllexport) void __cdecl NFR_PlayerSpikeHitV1(std::uintptr_t vehicle,std::uintptr_t simable) noexcept {
     native_freeroam::EncounterSpikeHit(vehicle,simable);
+}
+#pragma comment(linker,"/EXPORT:NFR_PlayerSpikeHitV2=_NFR_PlayerSpikeHitV2")
+extern "C" __declspec(dllexport) void __cdecl NFR_PlayerSpikeHitV2(std::uintptr_t vehicle,std::uintptr_t simable,
+    std::uintptr_t victim,std::uintptr_t victimSimable) noexcept {
+    native_freeroam::EncounterSpikeHitV2(vehicle,simable,victim,victimSimable);
+}
+
+#pragma comment(linker,"/EXPORT:NFR_SelectEventOpponentV1=_NFR_SelectEventOpponentV1")
+extern "C" __declspec(dllexport) std::uint32_t __cdecl NFR_SelectEventOpponentV1() noexcept {
+    try{return native_freeroam::SelectEventOpponent();}catch(...){return 0;}
 }

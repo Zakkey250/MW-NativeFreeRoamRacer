@@ -8,6 +8,9 @@
 #include "../src/ResourceApi.h"
 #include "../third_party/minhook/include/MinHook.h"
 #include <cstring>
+#include <algorithm>
+#include <vector>
+#include "../src/SkinResources.h"
 
 namespace {
 
@@ -30,7 +33,24 @@ void Check(const bool condition, const char* name) {
 
 } // namespace
 
-int main() {
+int main(int argc,char** argv) {
+    bool rejected=false;try{skin_resources::Build({});}catch(const std::exception&){rejected=true;}
+    Check(rejected,"truncated skin pack refused");
+    rejected=false;try{skin_resources::Decode(skin_resources::Bytes(16));}catch(const std::exception&){rejected=true;}
+    Check(rejected,"invalid compressed skin size refused");
+    if(argc>1){
+        std::string name=argv[1];std::wstring path(name.begin(),name.end());
+        auto source=skin_resources::Read(path.c_str()),original=source;
+        auto bundle=skin_resources::Build(source);
+        Check(source==original,"installed texture bytes unchanged");
+        Check(skin_resources::Word(bundle,0)==0xB3300000,"native resident pack type");
+        Check(skin_resources::Word(bundle,4)==bundle.size()-8,"native resident pack length");
+        unsigned count=0;for(auto block:skin_resources::Fields(bundle,8,bundle.size()))if(block.tag==0xB3310000)
+          for(auto field:skin_resources::Fields(bundle,block.at,block.end))if(field.tag==0x33310002){count=unsigned((field.end-field.at)/8);unsigned previous=0;
+            for(auto at=field.at;at<field.end;at+=8){auto key=skin_resources::Word(bundle,at);Check(key>previous,"private texture keys sorted and unique");previous=key;}}
+        Check(count==24,"private eight-slot texture triplets");
+        if(argc>2){std::ofstream output(argv[2],std::ios::binary);output.write(reinterpret_cast<const char*>(bundle.data()),bundle.size());Check(bool(output),"native pack fixture output");}
+    }
     using namespace limitbreaker;
     PopulationLease lease;
     Check(!lease.Refresh(0,1,100),"lease requires owner");

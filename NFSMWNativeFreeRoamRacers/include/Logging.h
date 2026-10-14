@@ -7,10 +7,11 @@ namespace native_freeroam {
 enum class LogLevel { Info, Warning, Error };
 
 void InitializeLogging(HMODULE module) noexcept;
+bool LoggingEnabled() noexcept;
 void Log(LogLevel level, const char* format, ...) noexcept;
 
-// Reuse only the current thread's file handle for a short synchronous report.
-// No queued messages or process-lifetime handle; each Log still writes at once.
+// Compatibility scope marker. Buffered diagnostics are drained by one writer;
+// gameplay callbacks never open/write/close a diagnostic file.
 class LogBatch final {
 public:
     LogBatch() noexcept;

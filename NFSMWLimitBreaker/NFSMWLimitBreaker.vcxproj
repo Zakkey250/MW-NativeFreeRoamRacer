@@ -61,6 +61,8 @@
   <ItemGroup>
     <ClInclude Include="src\VehicleLimitPlan.h" />
     <ClInclude Include="src\ResourceApi.h" />
+    <ClInclude Include="src\SkinResources.h" />
+    <ClInclude Include="src\SkinCapacity.inl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

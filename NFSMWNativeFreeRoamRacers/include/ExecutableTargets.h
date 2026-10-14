@@ -5,6 +5,7 @@
 namespace nfrr_target {
 struct Target { const char* id; std::uint64_t size; const char* sha256; };
 inline constexpr Target targets[]{
+    {"nfspatcher-en-1.3",6029312,"80774C2E5D619B4F120B48D4462896FD504C263399D203A238769CFFDE1D253C"},
     {"nfspatcher-en-1.3-4gb",6029312,"B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06"},
     {"redux-3.04-4gb",5926912,"0C5675A08CD71FD6D31CA87E992A915054BD8B80D268BFF0561D7ECC2067E342"},
 };

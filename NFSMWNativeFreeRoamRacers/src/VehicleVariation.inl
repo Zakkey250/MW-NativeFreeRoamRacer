@@ -11,6 +11,7 @@ std::vector<std::size_t> g_vehicleBag;
 std::size_t g_catalogCursor = 0;
 bool g_catalogFinished = false;
 std::uint32_t g_palettePlayerKey = 0;
+std::uint32_t g_eventPlayerKey = 0;
 bool g_appearanceAvailable = false;
 
 template <class Ride, class Randomize>
@@ -158,6 +159,7 @@ bool BuildVehiclePalette(std::uint32_t playerKey, const char* model) {
 }
 
 bool EnsureVehiclePalette(const VehicleSnapshot& player) {
+    g_eventPlayerKey = player.vehicleKey;
     if (!g_catalogFinished) return false;
     if (g_palettePlayerKey == player.vehicleKey) return !g_palette.empty();
     char model[32]{};
@@ -252,6 +254,19 @@ bool MakeAppearance(const RankedVehicle& car, NFSPluginSDK::MW05::FECustomizatio
     return true;
 }
 
+bool EventAttributeDetourOwned(unsigned address,const std::array<std::uint8_t,8>& actual) noexcept {
+    auto events=GetModuleHandleW(L"NFSMWEventLoader.asi");
+    using Owns=unsigned(__cdecl*)(unsigned,unsigned);
+    auto owns=events?reinterpret_cast<Owns>(GetProcAddress(events,"MWEL_AttributeHookOwnerV1")):nullptr;
+    if(!owns||actual[0]!=0xE9)return false;
+    std::int32_t displacement=0;std::memcpy(&displacement,actual.data()+1,4);
+    auto target=Address(address)+5+displacement;
+    MEMORY_BASIC_INFORMATION region{};
+    return VirtualQuery(reinterpret_cast<void*>(target),&region,sizeof(region))&&region.AllocationBase==events&&region.State==MEM_COMMIT&&
+           !(region.Protect&(PAGE_GUARD|PAGE_NOACCESS))&&
+           (region.Protect&(PAGE_EXECUTE|PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY))&&
+           owns(unsigned(Address(address)),unsigned(target));
+}
 bool VerifyVariationAssets() {
     struct Guard { unsigned address; std::array<std::uint8_t, 8> bytes; };
     const Guard guards[] = {
@@ -279,6 +294,13 @@ bool VerifyVariationAssets() {
     for (const auto& guard : guards) {
         std::array<std::uint8_t, 8> actual{};
         if (!SafeRead(reinterpret_cast<void*>(Address(guard.address)), &actual) || actual != guard.bytes) {
+            // The event loader enumerates only gameplay collections; car
+            // catalogs keep their native behavior. Accept only its exact
+            // installed detour, vouched for by the owning module's V1 API.
+            if(EventAttributeDetourOwned(guard.address,actual)){
+                Log(LogLevel::Info,"VARIATION_EVENT_ATTRIBUTE_DETOUR_ACCEPTED address=%08X exact_owner_verified=1",guard.address);
+                continue;
+            }
             Log(LogLevel::Error, "VARIATION_SURFACE_MISMATCH address=%08X", guard.address);
             return false;
         }

@@ -21,6 +21,8 @@ struct EncounterRuntime {
     bool pending=false, aiChanged=false, rewardAttempted=false, leadRoutePending=false;
     int actor=-1;
     unsigned reward=1000,blacklist=0;
+    bool wager=false;
+    std::uint64_t wagerWins=0;
     bool weaponForfeit=false;
     float routeSeconds=0,logSeconds=0,missingSeconds=0,retryLogSeconds=0;
     Vec3 lastDestination{};
@@ -45,6 +47,11 @@ struct EncounterRuntime {
     void* profile=nullptr;
 };
 EncounterRuntime g_battle;
+encounter_wager::Session g_wagerSession;
+void ResetEncounterWager() noexcept {
+    if(g_wagerSession.wins)Log(LogLevel::Info,"ENCOUNTER_STREAK_RESET wins=%llu reason=world-exit",g_wagerSession.wins);
+    g_wagerSession.Reset();
+}
 static_assert(offsetof(NFSPluginSDK::MW05::WRoadNav,fSegmentInd)==0x8E);
 static_assert(offsetof(NFSPluginSDK::MW05::WRoadNav,fValid)==0x50);
 std::atomic<DWORD> g_encounterAdapterThread{0};
@@ -93,6 +100,14 @@ bool ValidateEncounterBattleSurface() noexcept {
         {0x00428BCA,"\xe8\x61\x03\x36\x00",5}
     };
     for(const auto& guard:guards) if(std::memcmp(reinterpret_cast<void*>(Address(guard.va)),guard.bytes,guard.size)) {
+        if(guard.va==0x00788F30){
+            using Compatible=unsigned(__cdecl*)();
+            auto module=GetModuleHandleW(L"World2MWNativeLoader.asi");
+            auto compatible=module?reinterpret_cast<Compatible>(GetProcAddress(module,"W2MW_RaceNavHookCompatibleV1")):nullptr;
+            if(compatible&&compatible()){
+                Log(LogLevel::Info,"ENCOUNTER_SURFACE W2C_InitPath_chain=1 original_bytes_verified=1");continue;
+            }
+        }
         Log(LogLevel::Warning,"ENCOUNTER_SURFACE rejected address=%08X freeRoamUnaffected=1",unsigned(guard.va));return false;
     }
     Log(LogLevel::Info,"ENCOUNTER_SURFACE exact guards=%u accepted=1",unsigned(std::size(guards)));
@@ -136,6 +151,8 @@ bool ReadEncounterAI(const battle::Identity& identity,EncounterNativeAI& out,boo
     return ReadEncounterAIStructure(identity,out,failure)&&out.navValid&&(!actionRequired||out.raceAction);
 }
 
+#include "W2CRaceAssist.inl"
+#include "EventNeoBridge.inl"
 #include "EncounterRaceSkill.inl"
 #include "EncounterPowerBoost.inl"
 #include "EncounterMinimap.inl"
@@ -275,19 +292,63 @@ void* EncounterProfile() noexcept {
         !AudioRead(&database->CurrentUserProfiles[0],&profile)) return nullptr;
     return profile;
 }
-bool AwardEncounterCash() noexcept {
-    if(g_battle.model.phase()!=battle::Phase::Won||g_battle.rewardAttempted) return false;
+bool ReadEncounterCash(void* owner,std::int32_t* cash) noexcept {
+    return owner&&owner==EncounterProfile()&&AudioRead(
+        &static_cast<NFSPluginSDK::MW05::UserProfile*>(owner)->mTheCareerSettings.CurrentCash,cash)&&*cash>=0;
+}
+bool CheckEncounterWagerFunds() noexcept {
+    std::int32_t cash=0;
+    const bool readable=ReadEncounterCash(g_battle.profile,&cash);
+    if(readable&&encounter_wager::CanStart(cash,g_battle.reward))return true;
+    const bool insufficient=readable&&unsigned(cash)<g_battle.reward;
+    ShowEncounterMessage(g_encounterHud,insufficient?encounter_text::Id::InsufficientFunds:encounter_text::Id::WagerUnavailable);
+    Log(LogLevel::Info,"ENCOUNTER_WAGER_REJECT reason=%s amount=%u cash=%d noCashChange=1",
+        insufficient?"insufficient-cash":"cash-unavailable-or-limit",g_battle.reward,cash);
+    return false;
+}
+bool PrepareEncounterWager() noexcept {
+    g_battle.wager=g_settings.encounterWinStreak&&g_settings.encounterAIMode==encounter_custom::Mode::Custom;
+    if(!g_battle.wager){g_wagerSession.Reset();return true;}
+    g_wagerSession.Bind(reinterpret_cast<std::uintptr_t>(g_battle.profile));
+    g_battle.wagerWins=g_wagerSession.wins;
+    unsigned amount=0;
+    if(!encounter_wager::Quote(g_battle.reward,g_battle.wagerWins,&amount)) {
+        ShowEncounterMessage(g_encounterHud,encounter_text::Id::WagerUnavailable);
+        Log(LogLevel::Warning,"ENCOUNTER_WAGER_REJECT reason=native-cash-limit wins=%llu",g_battle.wagerWins);
+        return false;
+    }
+    g_battle.reward=amount;
+    return CheckEncounterWagerFunds();
+}
+bool SettleEncounterCash(bool won) noexcept {
+    if(g_battle.model.phase()!=(won?battle::Phase::Won:battle::Phase::Lost)||g_battle.rewardAttempted)return false;
     g_battle.rewardAttempted=true;
+    // Loss/forfeit resets even when cash access fails; never settle twice.
+    if(g_battle.wager&&!won)g_wagerSession.Complete(false,false);
+    if(!won&&!g_battle.wager)return true;
     if(!g_battle.profile||EncounterProfile()!=g_battle.profile) return false;
     auto* profile=static_cast<NFSPluginSDK::MW05::UserProfile*>(g_battle.profile);
     auto* cash=&profile->mTheCareerSettings.CurrentCash;
     std::int32_t before=0;
     const auto amount=g_battle.reward;
-    if(amount<300||amount>3000||amount%100||!AudioRead(cash,&before)||before<0||before>INT32_MAX-int(amount)) return false;
-    __try { *cash=before+int(amount); }
+    if(!g_battle.wager&&(amount<300||amount>3000||amount%100))return false;
+    std::int32_t after=0;
+    if(!AudioRead(cash,&before)||!encounter_wager::Transfer(before,amount,won,&after))return false;
+    __try { *cash=after; }
     __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
-    Log(LogLevel::Info,"ENCOUNTER_REWARD amount=%u BL=%u before=%d after=%d profile=%p diskSaveForced=0",amount,g_battle.blacklist,before,*cash,profile);
+    Log(LogLevel::Info,"%s amount=%u BL=%u before=%d after=%d profile=%p diskSaveForced=0",won?"ENCOUNTER_REWARD":"ENCOUNTER_WAGER_LOSS",amount,g_battle.blacklist,before,after,profile);
     return true;
+}
+bool AwardEncounterCash() noexcept {return SettleEncounterCash(true);}
+bool SettleEncounterWagerResult(bool won) noexcept {
+    if(g_battle.rewardAttempted||g_battle.model.phase()!=(won?battle::Phase::Won:battle::Phase::Lost))return false;
+    const bool paid=SettleEncounterCash(won);
+    if(g_battle.wager) {
+        g_wagerSession.Complete(won,paid);
+        Log(paid?LogLevel::Info:LogLevel::Warning,"ENCOUNTER_WAGER_SETTLED won=%u amount=%u success=%u wins=%llu noRetry=1",
+            unsigned(won),g_battle.reward,unsigned(paid),g_wagerSession.wins);
+    }
+    return paid;
 }
 
 battle::Car EncounterCar(const VehicleSnapshot& car) noexcept {
@@ -326,6 +387,11 @@ void EncounterMissingSample(float dt) noexcept {
     ClearEncounterPowerBoost();
     StopEncounterGuide(false);
     if(!EncounterBattleBusy()) return;
+    if(g_battle.profile&&EncounterProfile()!=g_battle.profile) {
+        g_wagerSession.Reset();
+        Log(LogLevel::Info,"ENCOUNTER_CANCEL reason=profile-changed noCashChange=1");
+        EndEncounterBattle(false,true);return;
+    }
     if(g_battle.pending&&g_battle.nativeStart.issued) {
         LogNativeStart(g_battle.nativeStart,g_battle.rival,"cancel-missing",0,GetTickCount64(),"missing-sample");
         EndEncounterBattle(false,true);return; // No stale vehicle dereference.
@@ -348,6 +414,11 @@ void EncounterMissingSample(float dt) noexcept {
 void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::vector<VehicleSnapshot>& vehicles,float dt) noexcept {
     if(g_encounterEnabled&&g_battleSurface) EnsureEncounterGauge();
     if(!EncounterBattleBusy()) return;
+    if(g_battle.profile&&EncounterProfile()!=g_battle.profile) {
+        g_wagerSession.Reset();
+        Log(LogLevel::Info,"ENCOUNTER_CANCEL reason=profile-changed noCashChange=1");
+        EndEncounterBattle(true,true);return;
+    }
     if(g_battle.pending&&g_battle.nativeStart.issued&&
         NativeStartExpired(g_battle.nativeStart,GetTickCount64())) {
         const char* field=nullptr;
@@ -360,7 +431,9 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
     }
     if(g_battle.weaponForfeit&&g_battle.model.phase()==battle::Phase::Active) {
         g_battle.model.Forfeit();
-        ShowEncounterMessage(g_encounterHud,encounter_text::Id::Forfeit);
+        const bool settled=SettleEncounterWagerResult(false);
+        ShowEncounterMessage(g_encounterHud,g_battle.wager?
+            (settled?encounter_text::Id::WagerForfeit:encounter_text::Id::WagerSettlementFailed):encounter_text::Id::Forfeit,g_battle.reward);
         QueueEncounterVoice(g_battle.actor,2);
         Log(LogLevel::Info,"ENCOUNTER_FINISH won=0 reward=0 reason=weapon-forfeit");
         EndEncounterBattle(true,false);return;
@@ -395,6 +468,7 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
             if(g_battle.profile)AudioRead(&static_cast<NFSPluginSDK::MW05::UserProfile*>(g_battle.profile)->mTheCareerSettings.CurrentBin,&bin);
             g_battle.blacklist=bin;
             g_battle.reward=encounter_reward::Amount(g_settings.encounterAIMode==encounter_custom::Mode::Custom,bin);
+            if(!PrepareEncounterWager()){EndEncounterBattle(false,true);return;}
             // Validate/seed once at acceptance, but keep the live model Idle.
             if(g_battle.startModel.Start(sample,g_battle.reward).event!=battle::Event::Started) {EndEncounterBattle(false,true);return;}
         } else if(EncounterProfile()!=g_battle.profile) {
@@ -408,6 +482,7 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
             EndEncounterBattle(true,true);return;
         }
         if(native==NativeStartResult::Pending) {g_gaugeVisible=false;return;}
+        if(g_battle.wager&&!CheckEncounterWagerFunds()){EndEncounterBattle(true,true);return;}
         g_battle.pending=false;g_battle.model=g_battle.startModel;
         // Resample current positions without evaluating the waiting interval.
         auto resumedSample=sample;resumedSample.paused=true;g_battle.model.Step(resumedSample,0);
@@ -423,7 +498,8 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
             g_battle.actor=owner->encounterActor;
         }
         QueueEncounterVoice(g_battle.actor,0);
-        ShowEncounterMessage(g_encounterHud,encounter_text::Id::Start);
+        ShowEncounterMessage(g_encounterHud,g_battle.wager?encounter_text::Id::WagerStart:encounter_text::Id::Start,g_battle.reward);
+        if(g_battle.wager)Log(LogLevel::Info,"ENCOUNTER_WAGER_START amount=%u previousWins=%llu stepPercent=5 locked=1",g_battle.reward,g_battle.wagerWins);
         Log(LogLevel::Info,"ENCOUNTER_START rival=%p speaker=%02d leader=rival separation=300 reward=%u BL=%u nativeRaceStatusWrites=0",
             rival->pointer,g_battle.actor,g_battle.reward,g_battle.blacklist);
     } else {
@@ -446,10 +522,12 @@ void UpdateEncounterBattleUnsafe(const VehicleSnapshot& legacyPlayer,const std::
         }
         if(change.event==battle::Event::Won||change.event==battle::Event::Lost) {
             const bool won=change.event==battle::Event::Won;
-            const bool paid=won&&change.cashIntent==g_battle.reward&&AwardEncounterCash();
-            ShowEncounterMessage(g_encounterHud,won?(paid?encounter_text::Id::Victory:encounter_text::Id::PaymentFailed):encounter_text::Id::Defeat,g_battle.reward);
+            const bool paid=(!won||change.cashIntent==g_battle.reward)&&SettleEncounterWagerResult(won);
+            const auto message=won?(paid?encounter_text::Id::Victory:encounter_text::Id::PaymentFailed):
+                (g_battle.wager?(paid?encounter_text::Id::WagerDefeat:encounter_text::Id::WagerSettlementFailed):encounter_text::Id::Defeat);
+            ShowEncounterMessage(g_encounterHud,message,g_battle.reward);
             QueueEncounterVoice(g_battle.actor,won?1:2);
-            Log(LogLevel::Info,"ENCOUNTER_FINISH won=%u reward=%u gap=%.1f speaker=%02d",unsigned(won),paid?g_battle.reward:0u,g_battle.model.gap(),g_battle.actor);
+            Log(LogLevel::Info,"ENCOUNTER_FINISH won=%u reward=%u gap=%.1f speaker=%02d",unsigned(won),won&&paid?g_battle.reward:0u,g_battle.model.gap(),g_battle.actor);
             EndEncounterBattle(true,false);return;
         }
     }

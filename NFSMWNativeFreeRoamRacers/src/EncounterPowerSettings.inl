@@ -11,6 +11,9 @@ void LoadEncounterPowerSettings(const wchar_t* path) noexcept {
     wchar_t mode[128]{},leaderPower[128]{};
     const auto modeCount=GetPrivateProfileStringW(L"Encounter",L"AIMode",L"Stable",mode,128,path);
     g_settings.encounterAIMode=modeCount>=127?encounter_custom::Mode::Stable:encounter_custom::ParseMode(mode);
+    g_settings.encounterWinStreak=GetPrivateProfileIntW(L"Encounter",L"WinStreakWager",0,path)==1;
+    Log(LogLevel::Info,"ENCOUNTER_WAGER_CONFIG enabled=%u customOnly=1 stepPercent=5 unlimitedMultiplier=1 restartRequired=1",
+        unsigned(g_settings.encounterWinStreak));
     const auto powerCount=GetPrivateProfileStringW(L"Encounter",L"CustomAILeaderPowerScale",L"1.25",leaderPower,128,path);
     g_settings.customAILeaderPowerScale=powerCount>=127?1.25f:ParseEncounterPowerScale(leaderPower,1.25f);
     Log(LogLevel::Info,"ENCOUNTER_AI_CONFIG mode=%s leaderPower=%.3f restartRequired=1",

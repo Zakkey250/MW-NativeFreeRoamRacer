@@ -1,8 +1,8 @@
-// A short synchronous report, not a queue: every row is still written immediately.
-// Keep the existing cadence and call order. No file is opened before the report is due.
+// Telemetry traversal is diagnostic work; bypass it entirely when logging is OFF.
 void LogTelemetry(const VehicleSnapshot& player,
                   const std::vector<VehicleSnapshot>& vehicles,
                   const float dt) {
+    if(!LoggingEnabled())return;
     g_telemetryTimer += dt;
     if (g_telemetryTimer < g_settings.telemetryIntervalSeconds) return;
     g_telemetryTimer = 0.0f;

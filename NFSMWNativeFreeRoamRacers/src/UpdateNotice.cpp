@@ -3,6 +3,7 @@
 #include "ModUpdateDialog.h"
 #include "Version.h"
 #include "Logging.h"
+#include "RuntimeConfig.h"
 #include <winhttp.h>
 #include <atomic>
 #include <filesystem>
@@ -83,7 +84,7 @@ void CheckForStartupUpdate(HMODULE module) noexcept {
         wchar_t path[32768]{};const DWORD count=GetModuleFileNameW(module,path,32768);
         if(!count||count>=32768)return;
         const auto scripts=std::filesystem::path(path).parent_path();
-        auto ini=std::filesystem::path(path);ini.replace_extension(L".ini");
+        const auto ini=nfrr_config::SettingsPath(path);
         if(!GetPrivateProfileIntW(L"Updates",L"Enabled",1,ini.c_str())) {Log(LogLevel::Info,"UPDATE_NOTICE disabled");return;}
         const auto eventName=mod_update::QueueName(GetCurrentProcessId())+L".Checked.MW-NativeFreeRoamRacer";
         checkedEvent.value=CreateEventW(nullptr,TRUE,TRUE,eventName.c_str());

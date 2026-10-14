@@ -10,26 +10,44 @@ using ArmsReadyFn=unsigned(__cdecl*)(float*,float*);
 using ArmsEmpFn=bool(__cdecl*)(std::uintptr_t,unsigned,std::uintptr_t,unsigned);
 ArmsReadyFn g_armsReady=nullptr;ArmsEmpFn g_armsEmp=nullptr;
 
-void RecordEncounterWeaponHit(unsigned weapon) noexcept {
+bool ReadEncounterWeaponIdentity(const battle::Identity& expected) noexcept {
+    VehicleSnapshot car{};
+    return expected.vehicle&&expected.simable&&expected.key&&
+        ReadVehicle(reinterpret_cast<void*>(expected.vehicle),&car)&&car.vehicleKey==expected.key&&
+        reinterpret_cast<std::uintptr_t>(GetSimablePointer(car.pointer))==expected.simable;
+}
+void RecordEncounterWeaponHit(unsigned weapon,const battle::Identity& victim) noexcept {
     if(g_encounterAdapterThread.load(std::memory_order_acquire)!=GetCurrentThreadId()||
-       !encounter_weapons::Forfeit(g_battle.model.phase()==battle::Phase::Active,true,true,true)||g_battle.weaponForfeit)return;
+       !encounter_weapons::Forfeit(g_battle.model.phase()==battle::Phase::Active,true,true,
+            victim.vehicle&&victim.simable&&victim.key&&victim==g_battle.rival)||g_battle.weaponForfeit)return;
     g_battle.weaponForfeit=true;
-    Log(LogLevel::Info,"ENCOUNTER_WEAPON_HIT weapon=%u source=player affected=1 forfeitQueued=1",weapon);
+    Log(LogLevel::Info,"ENCOUNTER_WEAPON_HIT weapon=%u source=player victim=%p key=%08X target=battle-rival affected=1 forfeitQueued=1",
+        weapon,reinterpret_cast<void*>(victim.vehicle),victim.key);
 }
 bool __stdcall EncounterEmpHitHook(std::uintptr_t target,unsigned type) {
     const auto caller=reinterpret_cast<std::uintptr_t>(_ReturnAddress())-g_encounterArsenal;
+    const auto victim=g_battle.rival;
+    // Racer type 3 uses the vehicle primary (IVehicle - AC); cop type 1
+    // and helicopter type 2 use different objects and never qualify.
+    const bool eligible=g_encounterAdapterThread.load(std::memory_order_acquire)==GetCurrentThreadId()&&
+        g_battle.model.phase()==battle::Phase::Active&&encounter_weapons::RivalEmpTarget(type,target,victim.vehicle)&&encounter_weapons::PlayerEmpCaller(unsigned(caller))&&
+        ReadEncounterWeaponIdentity(victim)&&ReadEncounterWeaponIdentity(g_battle.player);
     const bool affected=g_originalEncounterEmp(target,type);
-    if(affected&&target&&type>=1&&type<=3&&encounter_weapons::PlayerEmpCaller(unsigned(caller)))RecordEncounterWeaponHit(1);
+    if(affected&&eligible)RecordEncounterWeaponHit(1,victim);
+    else if(affected&&g_battle.model.phase()==battle::Phase::Active&&encounter_weapons::PlayerEmpCaller(unsigned(caller)))
+        Log(LogLevel::Info,"ENCOUNTER_WEAPON_IGNORED weapon=1 type=%u target=%p reason=not-confirmed-battle-rival",type,reinterpret_cast<void*>(target));
     return affected;
 }
 bool __stdcall EncounterShockHitHook(std::uintptr_t victim,std::uintptr_t source,const void* origin,float range) {
     const auto caller=reinterpret_cast<std::uintptr_t>(_ReturnAddress())-g_encounterArsenal;
+    const auto rival=g_battle.rival;
+    const bool eligible=g_encounterAdapterThread.load(std::memory_order_acquire)==GetCurrentThreadId()&&
+        g_battle.model.phase()==battle::Phase::Active&&encounter_weapons::RivalShockTarget(victim,source,rival.simable,g_battle.player.simable)&&
+        encounter_weapons::PlayerShockCaller(unsigned(caller))&&ReadEncounterWeaponIdentity(rival)&&ReadEncounterWeaponIdentity(g_battle.player);
     const bool affected=g_originalEncounterShock(victim,source,origin,range);
-    std::uintptr_t victimTable=0;
-    // Arsenal receives SimObject primary; ISimable is its +2C interface.
-    if(affected&&victim!=source&&source+0x2C==g_battle.player.simable&&
-       encounter_weapons::PlayerShockCaller(unsigned(caller))&&
-       AudioRead(reinterpret_cast<void*>(victim+0x2C),&victimTable)&&victimTable==Address(kISimableVtable))RecordEncounterWeaponHit(2);
+    if(affected&&eligible)RecordEncounterWeaponHit(2,rival);
+    else if(affected&&g_battle.model.phase()==battle::Phase::Active&&encounter_weapons::PlayerShockCaller(unsigned(caller)))
+        Log(LogLevel::Info,"ENCOUNTER_WEAPON_IGNORED weapon=2 target=%p reason=not-confirmed-battle-rival",reinterpret_cast<void*>(victim));
     return affected;
 }
 void TryEncounterWeaponBridge() {
@@ -73,5 +91,15 @@ void TryEncounterWeaponBridge() {
 }
 
 void EncounterSpikeHit(std::uintptr_t vehicle,std::uintptr_t simable) noexcept {
-    if(vehicle==g_battle.player.vehicle&&simable==g_battle.player.simable)RecordEncounterWeaponHit(3);
+    // Legacy V1 contains no victim identity. Never infer a rival hit from it.
+    (void)vehicle;(void)simable;
+}
+void EncounterSpikeHitV2(std::uintptr_t vehicle,std::uintptr_t simable,
+                         std::uintptr_t victim,std::uintptr_t victimSimable) noexcept {
+    if(g_encounterAdapterThread.load(std::memory_order_acquire)!=GetCurrentThreadId()||
+       g_battle.model.phase()!=battle::Phase::Active)return;
+    if(vehicle==g_battle.player.vehicle&&simable==g_battle.player.simable&&
+       victim==g_battle.rival.vehicle&&victimSimable==g_battle.rival.simable&&
+       ReadEncounterWeaponIdentity(g_battle.player)&&ReadEncounterWeaponIdentity(g_battle.rival))
+        RecordEncounterWeaponHit(3,g_battle.rival);
 }

@@ -1,0 +1,15 @@
+{
+  "id": "nfspatcher-en-1.3-4gb",
+  "executable": "speed.exe",
+  "size": 6029312,
+  "sha256": "B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06",
+  "machine": "I386",
+  "imageBase": "0x00400000",
+  "entryPointRva": "0x003C4040",
+  "sizeOfImage": "0x00678E4E",
+  "timestamp": "0x438E4C8C",
+  "primary": true,
+  "baseSha256": "80774C2E5D619B4F120B48D4462896FD504C263399D203A238769CFFDE1D253C",
+  "largeAddressAware": true,
+  "patch": "User-applied 4GB Patch; only COFF LAA flag and PE checksum differ"
+}

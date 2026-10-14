@@ -75,6 +75,7 @@ std::uint32_t __fastcall FakeNativeQuery(void*, void*, const void* vehicle,
 #include "Alpha83Tests.inl"
 #include "Alpha85Tests.inl"
 #include "Alpha88Tests.inl"
+#include "WagerTests.inl"
 int RunCacheTests() {
     auto* region = VirtualAlloc(nullptr, 0x120000,
         MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
@@ -96,6 +97,27 @@ int RunCacheTests() {
         std::printf("%s %s\n", condition ? "PASS" : "FAIL", name);
         if (!condition) ++failures;
     };
+    {
+        // Exercise the production ReadVehicle ABI. A plausible nonzero local
+        // velocity must never be mistaken for an orientation, at any yaw/speed.
+        const std::size_t slots[]={kSlotPosition,45,kSlotComputeHeading,kSlotSpeed,kSlotOffScreenTime,kSlotOnScreenTime};
+        void* saved[6];for(unsigned i=0;i<6;++i)saved[i]=table[slots[i]];
+        table[kSlotPosition]=reinterpret_cast<void*>(&Alpha32Vector);
+        table[45]=reinterpret_cast<void*>(&Alpha32LocalVelocity);
+        table[kSlotComputeHeading]=reinterpret_cast<void*>(&Alpha32Heading);
+        for(auto slot:{kSlotSpeed,kSlotOffScreenTime,kSlotOnScreenTime})table[slot]=reinterpret_cast<void*>(&Alpha32Float);
+        alpha32HeadingCalls=alpha32LocalVelocityCalls=0;
+        for(auto direction:{Vec3{1,0,0},Vec3{-1,0,0},Vec3{0,1,0},Vec3{0,-1,0}}){
+            alpha32Heading=ToUMath(direction);VehicleSnapshot snapshot{};
+            expect(ReadVehicle(&managed,&snapshot)&&snapshot.heading.x==direction.x&&snapshot.heading.y==direction.y&&snapshot.heading.z==direction.z,
+                "race heading reader uses native world direction output at every yaw");
+        }
+        alpha32Heading=ToUMath({0,0,0});VehicleSnapshot invalid{};
+        expect(!ReadVehicle(&managed,&invalid),"race heading reader rejects uninitialized zero direction");
+        alpha32Heading=ToUMath({80,0,0});expect(!ReadVehicle(&managed,&invalid),"race heading reader rejects velocity magnitude");
+        expect(alpha32LocalVelocityCalls==0&&alpha32HeadingCalls==6,"production reader calls ComputeHeading ABI and never local velocity slot");
+        alpha32Heading=ToUMath({1,0,0});for(unsigned i=0;i<6;++i)table[slots[i]]=saved[i];
+    }
     ProtectManagedVehicle(0, &managed, &simable, managed.key);
     g_streamRetentionEnabled.store(true);
     expect(CacheQueryHook(nullptr, nullptr, &managed, &asking) == 0,
@@ -753,6 +775,7 @@ int RunCacheTests() {
     RunAlpha83Tests(expect);
     RunAlpha85Tests(expect);
     RunAlpha88Tests(expect);
+    RunWagerTests(expect);
     {
         const auto previous=g_verifiedExecutableSha256;
         std::array<unsigned char,32> mainIdentity{},reduxIdentity{},mainAgain{};

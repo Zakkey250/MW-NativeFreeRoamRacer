@@ -38,12 +38,13 @@ bool IsEncounterSkillOwner(void* ai) noexcept {
 }
 float __fastcall EncounterSkillHook(void* ai,void*) {
     const float native=g_originalEncounterSkill(ai); // original ABI/result for every unrelated AI
-    if(!IsEncounterSkillOwner(ai)) return native;
+    VehicleSnapshot racer{},player{};
+    if(!IsEncounterSkillOwner(ai)&&!W2CRaceVehicle(static_cast<unsigned char*>(ai)+0x4C,racer,player)) return native;
     ++g_encounterSkillCalls;
     return 1.0f;
 }
 void InstallEncounterRaceSkillHook() noexcept {
-    if(!g_battleSurface||!g_settings.encounterSignalEnabled) return;
+    if(!g_battleSurface) return;
     auto* address=reinterpret_cast<void*>(Address(0x00409340));
     if(MH_CreateHook(address,&EncounterSkillHook,reinterpret_cast<void**>(&g_originalEncounterSkill))==MH_OK) {
         g_encounterSkillInstalled=MH_EnableHook(address)==MH_OK;

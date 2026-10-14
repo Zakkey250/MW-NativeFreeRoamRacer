@@ -10,6 +10,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "SkinResources.h"
 
 #include "VehicleLimitPlan.h"
 #include "PopulationApi.h"
@@ -25,6 +26,7 @@ namespace {
 using namespace limitbreaker;
 
 HMODULE g_module = nullptr;
+bool g_loggingEnabled = false;
 StorageBlock* g_storage = nullptr;
 void* g_allocation = nullptr;
 PVOID g_exceptionHandler = nullptr;
@@ -49,7 +51,7 @@ std::uint32_t g_audioAllocatorDescriptor = 0;
 volatile LONG g_resourceCapabilities = 0;
 std::uint32_t g_resourceLogicalLimit = 0;
 
-constexpr wchar_t kVersion[] = L"0.1.1";
+constexpr wchar_t kVersion[] = L"0.1.3-resource-headroom.2";
 constexpr std::uint64_t kExpectedExecutableSize = 6029312ull;
 constexpr char kNfspatcherSha256[] =
     "80774C2E5D619B4F120B48D4462896FD504C263399D203A238769CFFDE1D253C";
@@ -67,6 +69,7 @@ std::wstring ModuleSiblingPath(const wchar_t* name) {
 }
 
 void Log(const wchar_t* format, ...) {
+    if (!g_loggingEnabled) return;
     wchar_t message[2048]{};
     va_list arguments;
     va_start(arguments, format);
@@ -909,7 +912,12 @@ bool AllocateStorage() {
     return true;
 }
 
+#include "SkinCapacity.inl"
+#include "CarPartCapacity.inl"
 DWORD WINAPI Initialize(LPVOID) {
+    wchar_t logging[16]{};
+    GetPrivateProfileStringW(L"Diagnostics",L"Logging",L"",logging,16,ModuleSiblingPath(L"NFSMWLimitBreaker.ini").c_str());
+    g_loggingEnabled=wcscmp(logging,L"1")==0;
     Log(L"NFSMWLimitBreaker %s initialization started pid=%lu", kVersion, GetCurrentProcessId());
     const std::wstring iniPath = ModuleSiblingPath(L"NFSMWLimitBreaker.ini");
     if (GetPrivateProfileIntW(L"VehicleLimit", L"Enabled", 1, iniPath.c_str()) == 0) {
@@ -937,6 +945,8 @@ DWORD WINAPI Initialize(LPVOID) {
         return 0;
     }
     if (!VerifyAllPatchSites()) return 0;
+    InstallCarPartCapacity(iniPath);
+    if(GetPrivateProfileIntW(L"VehicleResources",L"AdditionalSkins",1,iniPath.c_str())==1)InstallSkinCapacity();
     g_resourceLogicalLimit = limit;
     bool audioExpansionInstalled = false;
     if (audioExpansionSetting != 0 && audioExpansionSetting != 1) {
@@ -962,7 +972,7 @@ DWORD WINAPI Initialize(LPVOID) {
     }
     const std::wstring dumpDirectory = ModuleSiblingPath(L"");
     wcsncpy_s(g_dumpDirectory, dumpDirectory.c_str(), _TRUNCATE);
-    g_exceptionHandler = AddVectoredExceptionHandler(1, CaptureVehicleLimitException);
+    if(g_loggingEnabled) g_exceptionHandler = AddVectoredExceptionHandler(1, CaptureVehicleLimitException);
     Log(L"CRASH_CAPTURE_ACTIVE handler=%p threshold=%lu configured_limit=%lu scope=main-executable image=0x%08lX..0x%08lX max_dumps=1 directory=%s",
         g_exceptionHandler,
         static_cast<unsigned long>(DiagnosticThresholdFor(limit)),
@@ -1048,6 +1058,7 @@ DWORD WINAPI Initialize(LPVOID) {
             static_cast<unsigned long>(At<std::uint32_t>(VectorCountAddress(spec))));
     }
 
+    if(!g_loggingEnabled) return 0; // No diagnostic polling worker when OFF.
     std::array<InvariantStatus, kRelocatedVectors.size()> previous{};
     previous.fill(InvariantStatus::Ok);
     std::array<bool, kRelocatedVectors.size()> previousOldRangeChanged{};

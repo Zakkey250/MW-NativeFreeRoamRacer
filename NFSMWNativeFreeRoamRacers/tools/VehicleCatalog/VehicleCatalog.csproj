@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier><PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="../../../tools/OGVI-1.4/release_windows/VaultLib.Core.dll" />
+    <Reference Include="../../../tools/OGVI-1.4/release_windows/CoreLibraries.*.dll" />
+    <Reference Include="../../../tools/OGVI-1.4/release_windows/plugins/Attribulator.Plugins.SpeedProfiles/VaultLib.*.dll" />
+  </ItemGroup>
+</Project>

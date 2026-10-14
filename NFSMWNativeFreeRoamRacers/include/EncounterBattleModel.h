@@ -130,7 +130,7 @@ public:
             std::abs(relative.x*axis.z-relative.z*axis.x)>20 ||
             DotXZ(UnitXZ(s.player.forward),axis)<=0) return {};
         Reset(); phase_=Phase::Active; leader_=Leader::Rival; previous_=s;
-        reward_=reward>=300&&reward<=3000&&reward%100==0?reward:0;
+        reward_=reward>=300&&reward<=unsigned(std::numeric_limits<std::int32_t>::max())?reward:0;
         gap_=separation; trail_.Seed(s.player.position,s.rival.position,axis);
         return {Event::Started,Reason::None,0};
     }

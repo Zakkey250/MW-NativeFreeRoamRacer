@@ -1,0 +1,59 @@
+param([string]$GameDirectory=$(Join-Path $(if($env:NFS_GAME_ROOT){$env:NFS_GAME_ROOT}elseif($env:COMPUTERNAME -eq 'ZAKKEY'){'E:\EA GAMES'}else{'\\ZAKKEY\EA GAMES'}) 'Need for Speed Most Wanted Main'))
+$ErrorActionPreference='Stop'
+$project=Split-Path $PSScriptRoot;$workspace=Split-Path $project
+$game=(Resolve-Path -LiteralPath $GameDirectory).Path
+$evidence=Join-Path $workspace 'diagnostics/encounter-20260915-alpha57'
+$backup=Join-Path $workspace 'rollback/2026-09-15-pre-alpha57-rules'
+$installed=Join-Path $game 'scripts/NFSMWNativeFreeRoamRacers.asi'
+$artifact=Join-Path $project 'artifacts/Release/NFSMWNativeFreeRoamRacers.asi'
+$oldHash='0FFC7C085E291E165205D89B86C030B558EF53A1D3D3D0BB9095FA92B3862C66'
+$newHash='BF4835D78389321741FB78DA2D96BABDA5BBE38C0234CA9BE21218A85934E5EC'
+$installedArms=Join-Path $game 'scripts/MWArmsAssist.asi'
+$artifactArms=Join-Path $workspace 'MWArmsAssist/bin/MWArmsAssist.asi'
+$oldArms='276FCBFAC3D5DDF5EFA2A84A27261BD9A9B391C45F6B0E1BA80EDDBA97407E9E'
+$newArms='B0B6A7DCF90A4ADE81BC591D9F16E64BB1148CC8CC47F92DD51E2130C861DEAA'
+function Hash([string]$path){(Get-FileHash -LiteralPath $path).Hash}
+function Stopped {
+    if(Get-CimInstance Win32_Process | Where-Object {$_.Name -in 'speed.exe','nfsMW.exe'}) {
+        throw 'User game running: deployment deferred; do not terminate it.'
+    }
+}
+Stopped
+if((Hash $artifact) -ne $newHash -or (Hash $installed) -ne $oldHash -or
+    (Hash (Join-Path $backup 'NFSMWNativeFreeRoamRacers/NFSMWNativeFreeRoamRacers.asi')) -ne $oldHash) {throw 'ASI identity mismatch'}
+if((Hash $artifactArms) -ne $newArms -or (Hash $installedArms) -ne $oldArms -or
+    (Hash (Join-Path $backup 'MWArmsAssist/MWArmsAssist.asi')) -ne $oldArms){throw 'Arms Assist identity mismatch'}
+$target=Get-Content (Join-Path $workspace 'integration/NFSMW-ExecutableTarget.json') -Raw | ConvertFrom-Json
+if((Hash (Join-Path $game $target.executable)) -ne $target.sha256){throw 'Target EXE differs'}
+$config=Get-Content (Join-Path $game 'Launch-SV-Safe.json') -Raw | ConvertFrom-Json
+$state=Get-Content -LiteralPath $config.StatePath -Raw | ConvertFrom-Json
+if($state.GameDirectory -ne $game){throw 'Production SV belongs to another installation'}
+function Snapshot {
+    $files=@(
+        Get-ChildItem -LiteralPath $game -File | Where-Object {$_.Extension -in '.exe','.dll','.ini','.json'}
+        Get-ChildItem -LiteralPath (Join-Path $game 'scripts') -Recurse -File | Where-Object {$_.Extension -in '.asi','.dll','.ini','.json','.tpk','.wav','.mp3' -or $_.Name -eq 'VehicleCatalog.cache.bin'}
+        Get-ChildItem -LiteralPath $game -Directory | Where-Object {$_.Name -like 'SVSaves_*'} | ForEach-Object {Get-ChildItem -LiteralPath $_.FullName -Recurse -File}
+        Get-ChildItem -LiteralPath $state.VaultProfileDirectory -Recurse -File
+        Get-Item -LiteralPath $config.StatePath,$state.ManifestPath,$state.OriginalSourceFile
+    ) | Sort-Object FullName -Unique
+    $result=@{};foreach($file in $files){$result[$file.FullName]=Hash $file.FullName};return $result
+}
+$beforePath=Join-Path $evidence 'deployment-before.json'
+if(Test-Path -LiteralPath $beforePath){throw 'Deployment evidence exists; do not overwrite'}
+& (Join-Path $workspace 'tools/Verify-NFSPatcherRuntime.ps1') -GameDirectory $game | Tee-Object (Join-Path $evidence 'runtime-before.txt')
+$before=Snapshot
+$before | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $beforePath -Encoding utf8
+Stopped
+Copy-Item -LiteralPath $artifact -Destination $installed -Force
+Copy-Item -LiteralPath $artifactArms -Destination $installedArms -Force
+if((Hash $installedArms) -ne $newArms){throw 'Arms Assist installed hash mismatch'}
+if((Hash $installed) -ne $newHash){throw 'Installed hash mismatch'}
+& (Join-Path $workspace 'tools/Verify-NFSPatcherRuntime.ps1') -GameDirectory $game | Tee-Object (Join-Path $evidence 'runtime-after.txt')
+$after=Snapshot
+$after | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $evidence 'deployment-after.json') -Encoding utf8
+$changed=@($before.Keys | Where-Object {$after[$_] -ne $before[$_]})
+if($changed.Count -ne 2 -or @($changed | Where-Object {$_ -notin @($installed,$installedArms)}).Count -ne 0 -or $before.Count -ne $after.Count) {
+    throw 'Unexpected installation diff; inspect evidence before play'
+}
+"PASS audited=$($before.Count) changed=2 (NFR + Arms Assist ASIs only) unchanged=$($before.Count-2); INI and production SV preserved"
+"PASS installed alpha.57 ASI=$newHash ArmsAssist=$newArms; no game launched"

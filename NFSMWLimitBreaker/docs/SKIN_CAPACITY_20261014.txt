@@ -1,0 +1,83 @@
+LimitBreaker 0.1.2-skin-capacity.1 — eight-car body transparency
+
+Base: accepted 0.1.1-render-fix.1, NFSMWLimitBreaker-restart-exp10-audio.
+Do not substitute the withdrawn experimental.35 project in NFSMWLimitBreaker.
+
+Reproduced cause
+VehicleRenderConn::Load (EN1.3 0x75D220) assigns normal writable composite
+slots 1..4. In an eight-car field the remaining cars received slot 0, an empty
+body composite hash, and uninitialized wheel/spinner hashes. Their body texture
+replacement resolved to DEFAULTALPHA. The body meshes still existed.
+The CarLoader arena and relevant slot pools were not exhausted in this repro.
+This path is shared by native MW and imported Carbon race introductions.
+
+Correction
+- Preserve native slots 1..12, including precomposite slots 5..12.
+- Add normal writable slots 13..20, with native release/free-bit handling.
+- Mark only these new slots as composited skins in RideInfo.
+- Generate 24 local destination textures (skin/wheel/spinner), cloning the
+  installation's original writable templates and assigning distinct virtual
+  image ranges. Original compressed textures are preserved byte-for-byte.
+- GlobalMemoryFile.bin contains a cached CARS/TEXTURES.BIN header. Updating
+  only the latter leaves old streaming offsets active. Remove only that cache
+  record so the game reads the current header from disk. Other records/data
+  remain intact. This is not the editor world cache.
+- Require SHA-256 matches for BOTH prepared files before enabling skin hooks.
+  Missing/mismatching resources leave the native skin path unmodified.
+- No CarLoader arena expansion, audio expansion, model restriction, or forced
+  shared tuning is introduced. Paint/vinyl resources remain independent.
+
+Preparation (read-only source, output outside the game)
+  python tools/Prepare-SkinCapacity.py --game GAME_DIRECTORY --output NEW_DELTA
+Uses the local World2MW/CourseEditor/PublicWeb/local TPK reader and Pillow.
+It rejects already-expanded files, malformed entries, and stale source cache
+headers. Review manifest.json. The output is installation-specific; NEVER
+copy the lab's CARS/GLOBAL files onto Main or another modded installation.
+Prepare separately from each destination's current files.
+
+Deployment transaction, while game/launcher are stopped
+1. Preserve receiving INI/settings/saves/Shadow/vault and a rollback delta of
+   the receiving ASI, the two resource files, and the changed INI section.
+2. Verify the destination still matches every beforeSHA256 in manifest.json.
+3. Stage and verify all files, then replace CARS/TEXTURES.BIN,
+   GLOBAL/GlobalMemoryFile.bin and scripts/NFSMWLimitBreaker.asi as a set.
+4. Merge VehicleResources.ini.fragment into the existing INI; do not replace
+   unrelated settings. Diagnostics/Logging must be 0 for handoff.
+5. Verify after hashes and the receiving Save Virtualizer/launcher identity.
+   Do not reset or rebind active SV state to work around a failed verification.
+6. Run local launch and actual 8-car acceptance before broader distribution.
+Rollback the whole delta, including the two file-hash INI fields, if needed.
+
+The same ASI supports both worlds; only local game resources differ.
+Official target guards remain EN1.3/noLAA and LAA. Runtime checks this session
+used the registered local LAA lab. Main is asleep and has not been updated.
+
+Diagnostics
+[Diagnostics] Logging accepts exactly 1 to opt in; 0, missing and invalid are
+OFF. OFF returns before formatting/file writes and stops the diagnostic
+polling thread after functional initialization. It also omits the exception
+capture handler. Existing production logs/settings are not removed.
+The existing ResourceLimitsV1 export is retained. No new third-party loader
+diagnostic ABI has been invented.
+
+Verification evidence
+evidence/carbon-eight-20261014 contains original fingerprints, failure images,
+read-only runtime snapshots, asset-validation.json, prepared-local, and the
+rollback delta. EventLoader/evidence/probe-lb-* contains per-launch evidence.
+Native C++ harness: 7,932 checks passed. Static hook-surface checks passed.
+Original 465 textures preserved; 24 added; other 23 memory cache entries and
+their payloads preserved; duplicate installation/stale header rejected.
+Carbon eight-car and native MW eight-car starts plus short autonomous driving
+passed, with all eight actual bodies moving and unique loaded body textures.
+Four-car regression and logging ON/OFF/missing/invalid checked separately.
+These are rendering/startup checks, not full-course completion acceptance.
+
+Limitations / remaining acceptance
+The automatic Escape key did not open the test game's menu, so an actual
+menu-driven restart/exit/re-entry was not verified this session. Native slot
+release code was inspected; repeat application launches were verified.
+No new figure/animation corruption was reproduced in the captured Carbon
+frames after the resource correction. A separate intermittent actor/camera
+failure is not proven fixed solely by correcting car textures.
+Receiving-PC runtime Verify-NFSPatcherRuntime.ps1 and Main/W2C deployment are
+pending because ZAKKEY is asleep. It must run there with local paths.

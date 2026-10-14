@@ -1,8 +1,8 @@
 # Third-party components / 第三者コンポーネント
 
-The repository's custom source-use terms apply only to Zakkey250's original material. They do not replace the following upstream licenses. No game software, vehicle assets, extracted audio, game executable or ASI loader is included.
+The repository's MIT license applies to Zakkey250's original material. It does not replace the following upstream licenses. No game software, vehicle assets, extracted audio, game executable or ASI loader is included.
 
-独自の利用条件はZakkey250が権利を持つ部分のみに適用します。下記の元ライセンスは変更しません。ゲーム本体・車両素材・抽出音声・ゲームEXE・ASIローダーは含みません。
+MITライセンスはZakkey250が権利を持つ部分に適用します。下記の元ライセンスは変更しません。ゲーム本体・車両素材・抽出音声・ゲームEXE・ASIローダーは含みません。
 
 ## MW mod
 

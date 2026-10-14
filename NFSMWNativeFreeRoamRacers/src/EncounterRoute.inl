@@ -51,8 +51,8 @@ bool DispatchEncounterPath(void* nav,std::uintptr_t caller,const Vec3* destinati
 bool __fastcall EncounterPathHook(void* nav,void*,const Vec3* destination,const Vec3* direction,bool flag) {
     return DispatchEncounterPath(nav,reinterpret_cast<std::uintptr_t>(_ReturnAddress()),destination,direction,flag);
 }
-void InstallEncounterPathHook() noexcept {
-    if(!g_battleSurface||!g_settings.encounterSignalEnabled) return;
+void InstallEncounterPathHook(bool editorRoute=false) noexcept {
+    if(!g_battleSurface||(!g_settings.encounterSignalEnabled&&!editorRoute)) return;
     auto* address=reinterpret_cast<void*>(Address(0x00788F30));
     if(MH_CreateHook(address,&EncounterPathHook,reinterpret_cast<void**>(&g_originalEncounterPath))==MH_OK) {
         g_encounterPathInstalled=MH_EnableHook(address)==MH_OK;

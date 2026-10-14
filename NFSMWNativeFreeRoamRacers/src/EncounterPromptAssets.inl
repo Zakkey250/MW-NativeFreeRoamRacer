@@ -27,6 +27,16 @@ bool PromptBytes(std::uintptr_t va,const char* bytes,std::size_t size) noexcept 
     return size<=32 && AudioReadableRange(Address(va),size) &&
         std::memcmp(reinterpret_cast<void*>(Address(va)),bytes,size)==0;
 }
+bool PromptAdapterSurface(std::uintptr_t va,const char* bytes,std::size_t size) noexcept {
+    if(PromptBytes(va,bytes,size))return true;
+    // EventLoader installs these two ABI-preserving adapters for course maps.
+    // Accept only a direct jump into that loaded image, without version gates.
+    const auto module=GetModuleHandleW(L"NFSMWEventLoader.asi");
+    const bool accepted=nfrr_prompt::CallSurface(reinterpret_cast<void*>(Address(va)),bytes,size,module);
+    Log(accepted?LogLevel::Info:LogLevel::Warning,
+        "ENCOUNTER_ICON surface=%08X eventLoaderAdapter=%u callOriginalEntry=1",unsigned(va),unsigned(accepted));
+    return accepted;
+}
 bool PrepareEncounterIconPath() noexcept {
     HMODULE self=nullptr;wchar_t path[MAX_PATH]{};
     if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -51,11 +61,14 @@ bool EncounterIconReady() noexcept {
     const auto now=GetTickCount64();
     if(!g_promptAssetState) {
         // Fail closed before making native calls. Do not pump synchronous loading.
-        if(!PromptBytes(0x0065FD30,"\x6A\xFF\x68\x5B\xA1\x87\x00\x64",8)||
+        if(!PromptAdapterSurface(0x0065FD30,"\x6A\xFF\x68\x5B\xA1\x87\x00\x64",8)||
            !PromptBytes(0x006616F0,"\x8B\x44\x24\x04\x56\x8B\xF1",7)||
-           !PromptBytes(0x00503400,"\x53\x55\x56\x57\x8B\x7C\x24\x14",8)||
-           !PromptBytes(0x00515B90,"\x8B\x44\x24\x04\x85\xC0\x74\x13",8)||!PrepareEncounterIconPath()) {
-            g_promptAssetState=-1;Log(LogLevel::Warning,"ENCOUNTER_ICON disabled reason=surface-or-asset-identity frame-retained=1");return false;
+           !PromptAdapterSurface(0x00503400,"\x53\x55\x56\x57\x8B\x7C\x24\x14",8)||
+           !PromptBytes(0x00515B90,"\x8B\x44\x24\x04\x85\xC0\x74\x13",8)) {
+            g_promptAssetState=-1;Log(LogLevel::Warning,"ENCOUNTER_ICON disabled reason=surface-identity frame-retained=1");return false;
+        }
+        if(!PrepareEncounterIconPath()) {
+            g_promptAssetState=-1;Log(LogLevel::Warning,"ENCOUNTER_ICON disabled reason=asset-path-or-identity frame-retained=1");return false;
         }
         g_promptAssetState=-1; // an exception must never make allocation retry
         __try {

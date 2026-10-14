@@ -58,6 +58,7 @@ void DispatchCustomSpeed(void* ai,std::uintptr_t caller,float native,ULONGLONG n
         if(result>native) ++g_customSpeedCalls;
         if(std::isfinite(native)&&native<=.1f) ++g_customSpeedStops;
     }
+    W2CTraceSpeed(ai,caller,native,result,now);
     g_originalCustomSpeed(ai,result);
 }
 void __fastcall CustomSpeedHook(void* ai,void*,float native) {
