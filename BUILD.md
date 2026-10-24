@@ -47,7 +47,7 @@ The build excludes decoder binaries. For extraction, separately obtain `vgmstrea
 64bit Python（Tkinter付き）・PyInstallerでビルドします。デコーダーは同梱せず、実際の抽出時に別途配置します。ビルドは`artifacts`配下に日時別で作成し、既存配布物は削除しません。EXEと`_internal`・`tools`は一緒に配置してください。ソース版の既定検索先は`tools/vgmstream`です。
 
 
-## 0.1.2 source layout
+## 0.1.3 source layout
 
 The `NFSMWEventLoader/src`, `World2MW/src/NeoAI`, `World2MW/src/NativeLoader` and `integration` support headers in this repository are the minimal compile-time dependency closure for NFRR. Keep their relative paths. They do not include the Event Loader/World2MW runtime or game data; those modules remain optional runtime providers.
 

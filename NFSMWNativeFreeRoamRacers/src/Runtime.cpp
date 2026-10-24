@@ -1,5 +1,7 @@
+#include "../../integration/InstalledCarType.h"
 #include "Runtime.h"
 #include "RuntimeConfig.h"
+#include "../../integration/AppearanceSafety.h"
 #include "MarkerRetry.h"
 #include "PromptCallSurface.h"
 #include "../../NFSMWEventLoader/src/NeoDriverBridge.h"
@@ -242,6 +244,7 @@ struct ManagedRacer {
     float missingSeconds = 0.0f;
     float lastDistanceMeters = std::numeric_limits<float>::infinity();
     bool retirementDeferred = false;
+    bool customExterior = false;
     int encounterActor = -1;
 };
 
@@ -1408,6 +1411,12 @@ bool ActivateNativeRacer(void* vehicle,
 #include "SpawnPreparation.inl"
 RefillPacing g_refillPacing;
 ULONGLONG g_refillDiagnosticAt=0;
+const VehicleSnapshot* FindLive(const std::vector<VehicleSnapshot>&,const ManagedRacer&) noexcept;
+mwappearance::RoamingPopulation AppearancePopulation() {
+    return mwappearance::CountRoaming(g_racers,[](const ManagedRacer& racer){
+        return FindLive(g_vehicleScratch,racer)!=nullptr;
+    });
+}
 
 bool SpawnAtAnchor(const VehicleSnapshot& anchor,const VehicleSnapshot& player,bool* candidateWait) {
     *candidateWait=false;
@@ -1428,7 +1437,9 @@ bool SpawnAtAnchor(const VehicleSnapshot& anchor,const VehicleSnapshot& player,b
         [](CareerPerformancePlan* plan){return SelectPreparedSpawnVehicle(plan,ReadCareerPerformancePlan);},
         [](const RankedVehicle& car){
             g_preparedCustomization.emplace();
-            return MakeAppearance(car,&*g_preparedCustomization);
+            const auto live=AppearancePopulation();
+            return MakeAppearance(car,&*g_preparedCustomization,
+                mwappearance::RoamingExterior(live.live,live.customized),&g_spawnPreparation.customExterior);
         });
     if(prepared!=SpawnPreparationResult::Ready) {
         *candidateWait=prepared!=SpawnPreparationResult::Failed;return false;
@@ -1509,6 +1520,16 @@ bool SpawnAtAnchor(const VehicleSnapshot& anchor,const VehicleSnapshot& player,b
             pendingVehicle,protectedCount);
         return false;
     }
+    // Preparation can outlive several population samples. Re-evaluate from
+    // current native identities before allocating; never rewrite an existing car.
+    const auto liveAppearance=mwappearance::CountRoaming(g_racers,[&](const ManagedRacer& racer){
+        return FindLive(g_vehicleScratch,racer) && ConstructionContains(protectedVehicles,protectedCount,racer.pointer);
+    });
+    if(g_spawnPreparation.customExterior && !mwappearance::RoamingExterior(liveAppearance.live,liveAppearance.customized)) {
+        const auto* car=FindPreparedSpawnVehicle();
+        if(!car || !StockExterior(*car,&customization)) {ResetSpawnPreparation();*candidateWait=true;return false;}
+        g_spawnPreparation.customExterior=false;
+    }
     if (protectedCount == 0 ||
         !BeginConstructionProtection(protectedVehicles.data(),
                                      static_cast<unsigned>(protectedCount))) {
@@ -1581,7 +1602,10 @@ bool SpawnAtAnchor(const VehicleSnapshot& anchor,const VehicleSnapshot& player,b
     racer.vehicleKey = identity.key;
     racer.markerSlot = markerSlot;
     racer.preset = preset;
+    racer.customExterior = g_spawnPreparation.customExterior;
     g_racers.push_back(std::move(racer));
+    Log(LogLevel::Info,"APPEARANCE_DENSITY liveBefore=%u customBefore=%u newCustom=%u threshold=5 naturalReplacement=1 paintPreserved=1",
+        liveAppearance.live,liveAppearance.customized,unsigned(g_racers.back().customExterior));
     ProtectManagedVehicle(markerSlot, g_racers.back().pointer,
                           g_racers.back().simable, g_racers.back().vehicleKey);
     Log(LogLevel::Info,
@@ -2046,7 +2070,7 @@ int __cdecl DisplayFrameHook() {
     using EventFrame = void(__cdecl*)();
     static EventFrame eventFrame = nullptr;
     if (!eventFrame) {
-        const auto events = GetModuleHandleW(L"NFSMWEventLoader.asi");
+        const auto events = GetModuleHandleW(L"MWEventLoader.asi");
         if (events) eventFrame = reinterpret_cast<EventFrame>(GetProcAddress(events,"MWEL_FrameV1"));
     }
     if (eventFrame) {

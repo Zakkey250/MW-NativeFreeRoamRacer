@@ -5,8 +5,8 @@
         const auto oldPerf=g_performance;
         const auto oldWindow=g_performanceWindowStart;
         const Settings defaults;
-        expect(!defaults.deepAudioDiagnostics && !defaults.frameTimingDiagnostics,
-            "diagnostic defaults OFF independent of LB; frame timing opt-in");
+        expect(!defaults.deepAudioDiagnostics && defaults.frameTimingDiagnostics,
+            "alpha72 deep audio default OFF independent of LB; lightweight timing ON");
         expect(defaults.freeRoamAudioSlots==4 && !defaults.lbEngineAudioExpansion,
             "alpha72 preserves four audio slots and optional expansion OFF");
         PerfHistogram h;

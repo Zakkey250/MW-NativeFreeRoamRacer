@@ -2,6 +2,7 @@
 #include "SpeedPlanner.h"
 #include "SteeringResponse.h"
 #include "BrakeResponse.h"
+#include "SteeringPrediction.h"
 namespace mwneo {
 struct Driver {
  Recovery recovery=Recovery::Normal;float stateTime=0,stuckTime=0,lastProgress=0,lastSpeed=0,acceleration=0,integral=0,effort=0,steering=0;
@@ -14,7 +15,7 @@ struct Driver {
  // Learned lateral-grip ceiling (m/s^2, 0 = unlearned). Survives Reset() so a respawn
  // does not forget where this car's tyres actually let go.
  // Opt-in: only the event loader's owned racers enable the grip guard; other users of this header (NFRR) are unchanged.
- float gripCeiling=0,understeerTime=0,steerSaturation=0,understeerPeak=0;bool gripGuard=false;
+ float gripCeiling=0,understeerTime=0,steerSaturation=0,understeerPeak=0,landingLearningHold=0;bool gripGuard=false;
  void Reset(){float grip=gripCeiling;bool guard=gripGuard;*this={};gripCeiling=grip;gripGuard=guard;}
  Controls Update(const Vehicle& v,const Guidance& g,const Profile& profile){
   previewBraking=false;
@@ -31,8 +32,11 @@ struct Driver {
   else {movementTime+=dt;movementDistance+=moved;}
   if(movementTime>=.5f){translationSpeed=movementDistance/movementTime;movementReady=true;movementTime=movementDistance=0;}
   float deltaYaw=std::atan2(CrossXZ(lastHeading,h),DotXZ(lastHeading,h));
-  response.Observe(v,g,profile,deltaYaw,recovery==Recovery::Normal);
-  brakes.Observe(v,g,profile,std::max(0.f,-effort),recovery==Recovery::Normal&&moved<10);
+  if(gripGuard&&(g.predictiveAvoidance&SupportedAirborne))landingLearningHold=.35f;
+  else landingLearningHold=std::max(0.f,landingLearningHold-dt);
+  bool learningReady=landingLearningHold==0;
+  response.Observe(v,g,profile,deltaYaw,recovery==Recovery::Normal&&learningReady);
+  brakes.Observe(v,g,profile,std::max(0.f,-effort),recovery==Recovery::Normal&&moved<10&&learningReady);
   float turn=deltaYaw/dt;
   yawRate+=(std::clamp(turn,-3.f,3.f)-yawRate)*std::min(1.f,dt*6);lastHeading=h;
   acceleration+=(std::clamp((v.speed-lastSpeed)/dt,-40.f,40.f)-acceleration)*std::min(1.f,dt*5);
@@ -41,9 +45,13 @@ struct Driver {
   // limit, yet the chassis yaw stays well below the bicycle-model prediction:
   // the tyres are already past their grip. Snap the working lateral limit to
   // the acceleration actually realised, and let it recover slowly.
-  const float configuredGrip=profile.lateralAccel,gripFloor=configuredGrip*.65f;
+  // Raising configured steering authority must not also force the learned
+  // tyre ceiling above the production-50 baseline's existing floor. Stronger
+  // lock is useful during braking; it is not proof of more physical grip.
+  const float configuredGrip=profile.lateralAccel,gripFloor=std::min(configuredGrip*.65f,32.5f);
   if(!(gripCeiling>0)||gripCeiling>configuredGrip)gripCeiling=configuredGrip;
   if(gripGuard){
+   if(!learningReady)understeerTime=understeerPeak=0;
    // Learn a safe speed without shrinking steering authority. Otherwise a
    // lower learned ceiling makes the same wheel angle look more saturated,
    // reinforces the learning trigger and disagrees with provider arc checks.
@@ -51,7 +59,7 @@ struct Driver {
    float model=std::tan(steering*profile.steeringLock)*response.gain/profile.wheelbase,expectedYaw=v.speed*model;
    steerSaturation=lockLimit>.001f?std::abs(steering)/lockLimit:0;
    bool saturated=steerSaturation>=.85f;
-   bool deficit=recovery==Recovery::Normal&&v.speed>25&&saturated&&std::abs(expectedYaw)>.12f&&acceleration>-12.f&&
+    bool deficit=learningReady&&!(g.predictiveAvoidance&SupportedAirborne)&&recovery==Recovery::Normal&&v.speed>25&&saturated&&std::abs(expectedYaw)>.12f&&acceleration>-12.f&&
     (expectedYaw*yawRate<=0||std::abs(yawRate)<.82f*std::abs(expectedYaw));
    if(deficit){understeerTime+=dt;understeerPeak=std::max(understeerPeak,v.speed*std::abs(yawRate));}
    else {understeerTime=std::max(0.f,understeerTime-2*dt);if(understeerTime==0)understeerPeak=0;}
@@ -63,10 +71,22 @@ struct Driver {
     gripCeiling=std::clamp(std::min(gripCeiling,realised*1.1f),gripFloor,configuredGrip);
     understeerTime=.15f;
     understeerPeak=v.speed*std::abs(yawRate);
-   }else if(!deficit&&gripCeiling<configuredGrip)gripCeiling=std::min(configuredGrip,gripCeiling+.5f*dt);
+   }else if(learningReady&&!deficit&&gripCeiling<configuredGrip)gripCeiling=std::min(configuredGrip,gripCeiling+.5f*dt);
   }
   if(gripGuard)planning.lateralAccel=std::min(planning.lateralAccel,gripCeiling);
   auto speed=PlanSpeed(g,v,planning);if(!speed.valid)return out;
+  // A passing/wall-clearance flag only proves free space. If this chassis
+  // has learned less grip than the provider used, a checked local correction
+  // still needs its actual steering-arc speed envelope. Flight has no tyre
+  // authority and retains only the upcoming road's landing/braking preview.
+  bool learnedArc=false;
+  if(gripGuard&&!(g.predictiveAvoidance&SupportedAirborne)&&gripCeiling<profile.lateralAccel-.5f&&
+     g.status==1&&recovery==Recovery::Normal&&v.speed>20&&square>16){
+   float k=2*std::abs(CrossXZ(h,aim))/square;
+   if(k>.0001f){float limit=std::sqrt(planning.lateralAccel/k);
+    if(limit<speed.target){speed.target=limit;speed.constraint=1;speed.constraintDistance=0;speed.constraintCurve=k;learnedArc=true;}
+   }
+  }
   float forward=DotXZ(h,aim),side=CrossXZ(h,aim),headingError=std::atan2(side,forward);
   // Guidance is sampled more slowly than physics. Its quantized centimetre
   // progress jumps must not cancel stuck detection while rubbing a wall.
@@ -109,6 +129,8 @@ struct Driver {
   bool manoeuvring=!reversing&&(g.status==2||raceTraffic)&&g.maneuverSpeed>0&&(recovery==Recovery::Realign||recovery==Recovery::Rejoin);
   if(manoeuvring)target=g.maneuverSpeed;
   float curve=square>4?2*side/square:0;
+  if(gripGuard&&g.status==1&&g.confidence>=.8f&&recovery==Recovery::Normal&&!(g.predictiveAvoidance&SupportedAirborne))
+   curve=PredictSteeringCurve(v,g.aim,yawRate,curve);
   float desired=std::atan(profile.wheelbase*curve/response.gain)/profile.steeringLock;
   // Damping uses measured heading response, rather than steering input alone.
   // This suppresses overshoot when successive avoidance targets move sideways.
@@ -160,7 +182,7 @@ struct Driver {
   // after exceeding it. Vehicle spacing keeps the existing passing policy.
   bool fixedOverspeed=gripGuard&&(speed.constraint==6||speed.constraint==8);
   bool cornerOverspeed=!reversing&&!manoeuvring&&recovery==Recovery::Normal&&g.status==1&&error<-5&&
-   (fixedOverspeed||(LimitSteeringArc(g.predictiveAvoidance)&&speed.constraint==1&&speed.constraintCurve>.006f));
+   (fixedOverspeed||learnedArc||(LimitSteeringArc(g.predictiveAvoidance)&&speed.constraint==1&&speed.constraintCurve>.006f));
   if(cornerOverspeed&&effort>0)effort=0;
   effort=Approach(effort,std::clamp(requested,-1.f,1.f),dt*(requested<effort?(cornerOverspeed?6.f:3.f):1.8f));
   if(error>.75f&&effort<0)effort=0;
@@ -176,7 +198,7 @@ struct Driver {
   // A stopped recovery candidate assumes the wheels are set before moving.
   if((reversing||manoeuvring)&&measured<.5f&&fabs(steering-desired)>.08f)effort=-.25f;
   float throttleOut=std::max(0.f,effort),brakeOut=std::max(0.f,-effort);
-  if(gripGuard&&!reversing&&!manoeuvring&&recovery==Recovery::Normal&&g.status==1&&measured>20){
+  if(gripGuard&&!(g.predictiveAvoidance&SupportedAirborne)&&!reversing&&!manoeuvring&&recovery==Recovery::Normal&&g.status==1&&measured>20){
    // Friction circle: cornering load takes grip away from drive torque.
    float load=measured*measured*std::abs(curve)/std::max(1.f,planning.lateralAccel);
    throttleOut*=std::clamp(1-(load-.8f)*2.5f,.35f,1.f);

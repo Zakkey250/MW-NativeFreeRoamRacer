@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <vector>
 #include "../src/SkinResources.h"
+#include "../src/SkinSlotOwnership.h"
+#include "../src/CarPartPolicy.h"
+#include "../../integration/AppearanceSafety.h"
 
 namespace {
 
@@ -34,6 +37,27 @@ void Check(const bool condition, const char* name) {
 } // namespace
 
 int main(int argc,char** argv) {
+    Check(car_part_capacity::Bytes(8192)==196656,"8192 model slots fit the native allocation");
+    Check(car_part_capacity::Bytes(16384)==393264,"maximum model reservation has no arithmetic overflow");
+    Check(!car_part_capacity::Valid(0)&&!car_part_capacity::Valid(1023)&&!car_part_capacity::Valid(16385),"invalid model capacities rejected");
+    for(unsigned count=2;count<=16;++count)for(unsigned seed=0;seed<32;++seed){
+        unsigned allowed=0;
+        for(unsigned slot=0;slot<count;++slot)allowed+=mwappearance::RaceExterior(slot,count,seed);
+        Check(allowed==(count<6?count:count/2),"race appearance quota includes preserved player");
+        Check(mwappearance::RaceExterior(0,count,seed),"player exterior never replaced");
+    }
+    Check(mwappearance::RoamingExterior(3,3),"four live roaming cars retain unrestricted exteriors");
+    Check(!mwappearance::RoamingExterior(4,4),"fifth spawn waits for natural exterior turnover");
+    Check(mwappearance::RoamingExterior(4,1)&&!mwappearance::RoamingExterior(4,2),"five-car quota admits at most two customized exteriors");
+    Check(mwappearance::RoamingExterior(5,2)&&!mwappearance::RoamingExterior(5,3),"six-car quota admits at most three customized exteriors");
+    struct RacerFixture{unsigned pointer,key;bool customExterior;};
+    const std::array<RacerFixture,4> managed{{{1,10,true},{2,20,true},{3,30,true},{4,40,false}}};
+    const auto liveAppearance=mwappearance::CountRoaming(managed,[](const RacerFixture& r){return r.pointer==1||(r.pointer==4&&r.key==40);});
+    Check(liveAppearance.live==2&&liveAppearance.customized==1,"missing and recycled generations excluded from roaming budget");
+    std::array<std::int16_t,139> ownParts{},stockParts{};
+    for(unsigned i=0;i<139;++i){ownParts[i]=std::int16_t(i+100);stockParts[i]=std::int16_t(i+1000);}
+    mwappearance::StockGeometry(ownParts,stockParts);
+    for(unsigned i=0;i<139;++i)Check(ownParts[i]==(i<76?stockParts[i]:std::int16_t(i+100)),"paint vinyl colors and decal textures survive stock exterior");
     bool rejected=false;try{skin_resources::Build({});}catch(const std::exception&){rejected=true;}
     Check(rejected,"truncated skin pack refused");
     rejected=false;try{skin_resources::Decode(skin_resources::Bytes(16));}catch(const std::exception&){rejected=true;}
@@ -42,13 +66,15 @@ int main(int argc,char** argv) {
         std::string name=argv[1];std::wstring path(name.begin(),name.end());
         auto source=skin_resources::Read(path.c_str()),original=source;
         auto bundle=skin_resources::Build(source);
+        std::cout << "Source external skin slots 13..20 indexed=" << skin_resources::HasExternalSlots(source) << "\n";
+        Check(!skin_resources::HasExternalSlots(bundle),"private LB aliases cannot validate external DUMMY slots");
         Check(source==original,"installed texture bytes unchanged");
         Check(skin_resources::Word(bundle,0)==0xB3300000,"native resident pack type");
         Check(skin_resources::Word(bundle,4)==bundle.size()-8,"native resident pack length");
         unsigned count=0;for(auto block:skin_resources::Fields(bundle,8,bundle.size()))if(block.tag==0xB3310000)
           for(auto field:skin_resources::Fields(bundle,block.at,block.end))if(field.tag==0x33310002){count=unsigned((field.end-field.at)/8);unsigned previous=0;
             for(auto at=field.at;at<field.end;at+=8){auto key=skin_resources::Word(bundle,at);Check(key>previous,"private texture keys sorted and unique");previous=key;}}
-        Check(count==24,"private eight-slot texture triplets");
+        Check(count==48,"private sixteen-slot texture triplets");
         if(argc>2){std::ofstream output(argv[2],std::ios::binary);output.write(reinterpret_cast<const char*>(bundle.data()),bundle.size());Check(bool(output),"native pack fixture output");}
     }
     using namespace limitbreaker;
@@ -235,6 +261,11 @@ int main(int argc,char** argv) {
         kExpectedAITargetVectorVtable, aiData, aiData, 32, 32, 31) == InvariantStatus::Ok,
         "AI target companion state");
 
+    Check(skin_slots::SupplementalFreeBits(0,20)==0xFF000u,"verified external allocator receives slots 13..20");
+    Check(skin_slots::SupplementalFreeBits(0xFF000u,20)==0,"occupied extra slots cannot be reallocated");
+    Check(skin_slots::SupplementalFreeBits(0xA000u,20)==0xF5000u,"mixed extra-slot ownership is preserved");
+    Check((skin_slots::SupplementalFreeBits(0,20)&0xFFFu)==0,"native first twelve free bits stay untouched");
+    Check(skin_slots::SupplementalFreeBits(0,12)==0&&skin_slots::SupplementalFreeBits(0,32)==0,"unknown or unverified allocator capacity fails closed");
     if (failures == 0) {
         std::cout << "PASS " << checks << " native checks\n";
         return EXIT_SUCCESS;

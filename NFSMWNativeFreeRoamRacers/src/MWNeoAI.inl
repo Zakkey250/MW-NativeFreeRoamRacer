@@ -30,7 +30,7 @@ static unsigned NeoSelectedController(){
  auto fn=module?reinterpret_cast<Get>(GetProcAddress(module,"W2MW_RaceControllerV1")):nullptr;return fn?fn():1;
 }
 static bool NeoLocalPlayer(){
- auto events=GetModuleHandleW(L"NFSMWEventLoader.asi");using LocalTest=unsigned(__cdecl*)();
+ auto events=GetModuleHandleW(L"MWEventLoader.asi");using LocalTest=unsigned(__cdecl*)();
  auto local=events?reinterpret_cast<LocalTest>(GetProcAddress(events,"MWEL_LocalRaceTestV1")):nullptr;
  if(local&&local())return true;
  auto module=GetModuleHandleW(L"World2MWNativeLoader.asi");using Get=unsigned(__cdecl*)();
@@ -262,7 +262,7 @@ static bool NeoOwnedFailure(void* primary){
 static bool NeoDriveGuarded(void* primary,float dt){__try{if(NeoDrive(primary,dt))return true;return NeoOwnedFailure(primary);}__except(EXCEPTION_EXECUTE_HANDLER){return NeoOwnedFailure(primary);}}
 static void __fastcall NeoDriving(void* primary,void*,float dt){neoDrivingCaller=reinterpret_cast<std::uintptr_t>(_ReturnAddress());if(!NeoDriveGuarded(primary,dt))neoOriginalDriving(primary,dt);}
 static void InstallNeoAI(){
- auto eventLoader=GetModuleHandleW(L"NFSMWEventLoader.asi");using Owner=unsigned(__cdecl*)();auto owner=eventLoader?reinterpret_cast<Owner>(GetProcAddress(eventLoader,"MWEL_NeoDriverOwnerV1")):nullptr;
+ auto eventLoader=GetModuleHandleW(L"MWEventLoader.asi");using Owner=unsigned(__cdecl*)();auto owner=eventLoader?reinterpret_cast<Owner>(GetProcAddress(eventLoader,"MWEL_NeoDriverOwnerV1")):nullptr;
  // The event module may still be validating packages. Its driver export
  // declares ownership; do not race its installation and steal input hooks
  // merely because its installed flag is not set yet.

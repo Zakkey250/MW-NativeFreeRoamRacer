@@ -97,6 +97,23 @@ int RunCacheTests() {
         std::printf("%s %s\n", condition ? "PASS" : "FAIL", name);
         if (!condition) ++failures;
     };
+#ifdef NFRR_CUSTOM_CHASE_TESTS_ONLY
+    {
+        const auto put=[](auto& buffer,std::size_t offset,auto value) {
+            std::memcpy(buffer.data()+offset,&value,sizeof(value));
+        };
+#include "Alpha30Tests.inl"
+#include "Alpha31Tests.inl"
+#include "Alpha32Tests.inl"
+#include "Alpha51Tests.inl"
+#include "Alpha52Tests.inl"
+#include "Alpha53Tests.inl"
+#include "Alpha54Tests.inl"
+#include "Alpha55Tests.inl"
+        VirtualFree(region,0,MEM_RELEASE);
+        return failures==0?0:1;
+    }
+#endif
     {
         // Exercise the production ReadVehicle ABI. A plausible nonzero local
         // velocity must never be mistaken for an orientation, at any yaw/speed.
@@ -793,4 +810,4 @@ int RunCacheTests() {
     return failures == 0 ? 0 : 1;
 }
 }
-int main() { return native_freeroam::RunCacheTests(); }
+int main() { setvbuf(stdout,nullptr,_IONBF,0); return native_freeroam::RunCacheTests(); }

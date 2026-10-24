@@ -1,3 +1,4 @@
+#include "../../NFSMWNativeFreeRoamRacers/include/ExecutableTargets.h"
 #include <windows.h>
 #include <bcrypt.h>
 #include <dbghelp.h>
@@ -10,6 +11,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <mutex>
 #include "SkinResources.h"
 
 #include "VehicleLimitPlan.h"
@@ -51,12 +53,7 @@ std::uint32_t g_audioAllocatorDescriptor = 0;
 volatile LONG g_resourceCapabilities = 0;
 std::uint32_t g_resourceLogicalLimit = 0;
 
-constexpr wchar_t kVersion[] = L"0.1.3-resource-headroom.2";
-constexpr std::uint64_t kExpectedExecutableSize = 6029312ull;
-constexpr char kNfspatcherSha256[] =
-    "80774C2E5D619B4F120B48D4462896FD504C263399D203A238769CFFDE1D253C";
-constexpr char kNfspatcherLaaSha256[] =
-    "B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06";
+constexpr wchar_t kVersion[] = L"0.1.3-resource-headroom.5";
 constexpr DWORD kVectorInitializationTimeoutMs = 10 * 60 * 1000;
 
 std::wstring ModuleSiblingPath(const wchar_t* name) {
@@ -169,12 +166,12 @@ bool IsSupportedExecutable(std::wstring& executablePath, std::string& digest) {
     const std::uint64_t size =
         (static_cast<std::uint64_t>(attributes.nFileSizeHigh) << 32) |
         attributes.nFileSizeLow;
-    if (size != kExpectedExecutableSize ||
+    if (!nfrr_target::KnownSize(size) ||
         reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr)) != 0x00400000u ||
         !HashFileSha256(path, digest)) {
         return false;
     }
-    return digest == kNfspatcherSha256 || digest == kNfspatcherLaaSha256;
+    return nfrr_target::Find(size,digest)!=nullptr;
 }
 
 template <typename T>
@@ -913,7 +910,9 @@ bool AllocateStorage() {
 }
 
 #include "SkinCapacity.inl"
+#include "SkinRecolourCache.inl"
 #include "CarPartCapacity.inl"
+#include "NativeAiDispatchQueue.inl"
 DWORD WINAPI Initialize(LPVOID) {
     wchar_t logging[16]{};
     GetPrivateProfileStringW(L"Diagnostics",L"Logging",L"",logging,16,ModuleSiblingPath(L"NFSMWLimitBreaker.ini").c_str());
@@ -947,6 +946,7 @@ DWORD WINAPI Initialize(LPVOID) {
     if (!VerifyAllPatchSites()) return 0;
     InstallCarPartCapacity(iniPath);
     if(GetPrivateProfileIntW(L"VehicleResources",L"AdditionalSkins",1,iniPath.c_str())==1)InstallSkinCapacity();
+    InstallSkinRecolourCache();
     g_resourceLogicalLimit = limit;
     bool audioExpansionInstalled = false;
     if (audioExpansionSetting != 0 && audioExpansionSetting != 1) {
@@ -960,7 +960,9 @@ DWORD WINAPI Initialize(LPVOID) {
     Log(L"WAITING reason=vehicle-vectors-not-yet-active timeout_ms=%lu",
         static_cast<unsigned long>(kVectorInitializationTimeoutMs));
     if (!WaitForVehicleVectors(kVectorInitializationTimeoutMs)) return 0;
+    if (!InstallAiDispatchQueue()) return 0;
     if (!AllocateStorage()) {
+        RestoreAiDispatchQueue();
         Log(L"INACTIVE reason=storage-allocation-failed error=%lu", GetLastError());
         return 0;
     }
@@ -1002,6 +1004,7 @@ DWORD WINAPI Initialize(LPVOID) {
     if (!SelfTestVictimVectorVtable() || !SelfTestManagerVectorVtable() ||
         managerBeforePatch != 0 || !InstallVictimVectorVtable() ||
         !InstallManagerVectorVtable()) {
+        RestoreAiDispatchQueue();
         RestoreVictimVectorVtable();
         RestoreManagerVectorVtable();
         for (std::size_t index = kRelocatedVectors.size(); index > 0; --index) {
@@ -1019,6 +1022,7 @@ DWORD WINAPI Initialize(LPVOID) {
     std::size_t appliedCount = 0;
     if (!ApplyBudgetPatches(limit, appliedCount)) {
         RestoreBudgetPatches(appliedCount);
+        RestoreAiDispatchQueue();
         RestoreVictimVectorVtable();
         RestoreManagerVectorVtable();
         for (std::size_t index = kRelocatedVectors.size(); index > 0; --index) {

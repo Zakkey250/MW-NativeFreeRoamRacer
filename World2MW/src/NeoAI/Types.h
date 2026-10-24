@@ -3,13 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include "../../../integration/NativeFloatMath.h"
 namespace mwneo {
 constexpr uint32_t AbiVersion=5,MaxSamples=64;
 struct Point {float x=0,y=0,z=0;};
 inline Point Sub(Point a,Point b){return {a.x-b.x,a.y-b.y,a.z-b.z};}
 inline float DotXZ(Point a,Point b){return a.x*b.x+a.z*b.z;}
 inline float CrossXZ(Point a,Point b){return a.x*b.z-a.z*b.x;}
-inline float LengthXZ(Point a){return std::hypot(a.x,a.z);}
+inline float LengthXZ(Point a){return mwel_math::Hypot(a.x,a.z);}
 inline float Distance(Point a,Point b){auto d=Sub(a,b);return std::sqrt(d.x*d.x+d.y*d.y+d.z*d.z);}
 inline bool Finite(Point p){return std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z);}
 inline Point UnitXZ(Point p){float n=LengthXZ(p);return n>.001f?Point{p.x/n,0,p.z/n}:Point{};}
@@ -19,6 +20,7 @@ enum class Recovery:uint32_t {Normal,DetectingStuck,Reverse,Realign,Rejoin};
 constexpr uint32_t RaceTrafficPush=2; // leadVehicle policy: contact is permitted in a race.
 constexpr uint32_t PendingGateReacquire=4; // predictiveAvoidance bit; native CP still pending after physically passing its plane.
 constexpr uint32_t AuthoredObstacleAvoidance=8; // Fixed editor volumes require a physically feasible detour speed.
+constexpr uint32_t SupportedAirborne=16; // Bounded same-deck flight; never learn tyre response while airborne.
 inline bool LimitSteeringArc(uint32_t avoidance){return !avoidance||(avoidance&AuthoredObstacleAvoidance);}
 struct Vehicle {uint32_t size=sizeof(Vehicle),version=AbiVersion,handle=0;Point position{},heading{},velocity{};float speed=0,halfWidth=1,dt=.016f,halfLength=2.5f,steering=0,steeringGain=1;Recovery recovery=Recovery::Normal;};
 struct Sample {Point position{};float distance=0,widthLeft=3,widthRight=3;uint32_t flags=Main|ReverseForbidden;float roadCurvature=-1;};
@@ -30,6 +32,8 @@ struct Guidance {
  uint32_t leadVehicle=0,rearClear=0;float rearDistance=0,reverseSteering=0,maneuverSteering=0,maneuverSpeed=0;Point aim{},forward{};uint32_t predictiveAvoidance=0;std::array<Sample,MaxSamples> samples{};
 };
 struct Profile {
+ // maxSpeed=0 opts into vehicle-limited speed; positive values retain the
+ // legacy cap for providers which still explicitly request one.
  float maxSpeed=330.f/3.6f,lateralAccel=28.f,brakeDecel=12,driveAccel=8;
  float wheelbase=2.65f,steeringLock=.55f,lookaheadBase=10,lookaheadTime=.95f;
 };

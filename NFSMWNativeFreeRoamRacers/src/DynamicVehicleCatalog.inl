@@ -63,7 +63,7 @@ bool ReadCatalogSource(std::uintptr_t* database,std::uintptr_t* carClass,
                        std::uintptr_t* typeTable,std::uint32_t* count) noexcept {
     __try {
         if(!SafeRead(reinterpret_cast<void*>(Address(0x90DCBC)),database)||!*database ||
-           !SafeRead(reinterpret_cast<void*>(Address(0x9B09D8)),typeTable)||!*typeTable) return false;
+           !(*typeTable=reinterpret_cast<std::uintptr_t>(reinterpret_cast<void*(__cdecl*)(unsigned)>(Address(0x739920))(0)))) return false;
         auto* cls=reinterpret_cast<CatalogClass*(__thiscall*)(void*,std::uint32_t)>(Address(0x455BC0))(
             reinterpret_cast<void*>(*database),CatalogHash("pvehicle"));
         if(!cls) return false;

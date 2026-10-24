@@ -172,9 +172,11 @@ foreach ($g in $guards) {
 }
 if ($sourceText.Contains('kSlotOffScreenTime = 24') -and $sourceText.Contains('RETIRE_DEFERRED') -and $sourceText.Contains('outside hard retirement radius')) { Pass 'visible retirement deferral and hard safety radius present' } else { Fail 'visible retirement deferral missing' }
 if ($sourceText.Contains('MISSING_FINAL') -and $sourceText.Contains('pointerPresent=%u')) { Pass 'stream-loss identity diagnostics present' } else { Fail 'stream-loss identity diagnostics missing' }
-foreach ($token in @('WindowStart', 'RankVehicles', 'ChooseAppearanceOrStock', 'DynamicVehicleCatalog.inl', 'g_vehicleBag', 'stockFallback=%u', 'usage == 0', '__finally')) {
+foreach ($token in @('WindowStart', 'RankVehicles', 'ChooseAppearanceOrStock', 'DynamicVehicleCatalog.inl', 'g_vehicleBag', 'stockFallback=%u', '__finally')) {
     if ($variation.Contains($token)) { Pass "variation guard: $token" } else { Fail "variation guard missing: $token" }
 }
+$installedTypes=Get-Content -LiteralPath (Join-Path $projectRoot '../integration/InstalledCarType.h') -Raw
+if($variation.Contains('mwcartype::FindPlayable(model)') -and $installedTypes.Contains('entry[0x94]!=0') -and $installedTypes.Contains('0x739940') -and $installedTypes.Contains('0x739920') -and $installedTypes.Contains('byIndex==entry')){Pass 'playable vehicle usage and native accessor round-trip validated'}else{Fail 'playable vehicle accessor validation missing'}
 $catalogText = Get-Content -LiteralPath (Join-Path (Split-Path $Source) 'DynamicVehicleCatalog.inl') -Raw
 if(($sourceText+$variation+$catalogText) -match 'kInstalledVehicles|kCatalogAssets|CATALOG_ASSET_MISMATCH|#include "InstalledVehicleCatalog.h"') { Fail 'fixed installed car pack still required' }
 else { Pass 'runtime catalog does not depend on compiled model list or GLOBAL hashes' }

@@ -129,8 +129,26 @@
         expect(CustomDriveHint(directOwner,Address(0x00428FED),1100,actualAim)&&actualAim.x==100,
             "alpha53 exact active opponent race caller receives trajectory drive aim");
         DispatchCustomDrive(directOwner,Address(0x00428FED),&nativeAim,1100);
-        expect(alpha53DriveCalls==1&&alpha53DriveOwner==directOwner&&alpha53DriveAim.x==100,
-            "alpha53 direct target dispatch forwards replacement exactly once");
+        expect(alpha53DriveCalls==1&&alpha53DriveOwner==directOwner&&alpha53DriveAim.x==100&&
+            alpha53DriveAim.y==20&&alpha53DriveAim.z==200,
+            "custom trajectory dispatch preserves physical XYZ at native memory offsets exactly once");
+        for(const Vec3 point: {Vec3{1200,30,-2400},Vec3{-800,107,200},Vec3{15,-4,900}}) {
+            g_battle.routeHint.position={point.x,point.y,point.z};
+            const auto before=alpha53DriveCalls;
+            DispatchCustomDrive(directOwner,Address(0x00428FED),&nativeAim,1100);
+            expect(alpha53DriveCalls==before+1&&alpha53DriveAim.x==point.x&&
+                alpha53DriveAim.y==point.y&&alpha53DriveAim.z==point.z,
+                "custom chase world target preserves signed axes and altitude without SDK permutation");
+        }
+        g_battle.routeHint.position={100,20,200};
+        {
+            const float nativeWorld[]={1200,30,-2400};
+            const auto legacy=W2CSdkPoint(nativeWorld);
+            const auto encoded=ToUMath(legacy);Vec3 raw{};
+            std::memcpy(&raw,&encoded,sizeof(raw));
+            expect(raw.x==nativeWorld[0]&&raw.y==nativeWorld[1]&&raw.z==nativeWorld[2],
+                "W2C legacy provider still encodes native XYZ exactly once");
+        }
         for(auto caller:{std::uintptr_t(0),Address(0x00428FED)+1}) {
             DispatchCustomDrive(directOwner,caller,&nativeAim,1100);
             expect(alpha53DrivePointer==&nativeAim,"alpha53 other native target callers keep original argument");

@@ -101,20 +101,8 @@ bool InspectVehicleAttributes(std::uint32_t key, char* model,
 }
 
 int FindPlayableType(const char* model) noexcept {
-    std::uint8_t* table = nullptr;
-    int count = 0;
-    if (!SafeRead(reinterpret_cast<void*>(Address(0x9B09D8)), &table) || !table ||
-        !SafeRead(reinterpret_cast<void*>(Address(0x9B1334)), &count) || count < 1 || count > 1024)
-        return -1;
-    for (int i = 0; i < count; ++i) {
-        std::array<char, 16> name{};
-        std::uint8_t usage = 0xFF;
-        if (!SafeRead(table + i * 0xD0, &name) ||
-            !SafeRead(table + i * 0xD0 + 0x94, &usage)) return -1;
-        if (name.back() != '\0') continue;
-        if (usage == 0 && _stricmp(name.data(), model) == 0) return i;
-    }
-    return -1;
+    __try { return mwcartype::FindPlayable(model); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return -1; }
 }
 
 bool ValidStockPerformance(bool estimateSucceeded, const std::array<float, 3>& ratings) noexcept {
@@ -181,7 +169,9 @@ const RankedVehicle* SelectRandomVehicle() {
 bool ValidateRideParts(const NFSPluginSDK::MW05::RideInfo& ride) noexcept {
     using namespace NFSPluginSDK::MW05;
     __try {
-        for (const auto slot : {CarSlotId::Body, CarSlotId::FrontWheel, CarSlotId::RearWheel})
+        // Native stock MW cars commonly omit the separate rear-wheel slot.
+        // Existing optional slots are still validated against the part database.
+        for (const auto slot : {CarSlotId::Body, CarSlotId::FrontWheel})
             if (!ride.mPartsTable[static_cast<unsigned>(slot)]) return false;
         for (auto* part : ride.mPartsTable) {
             if (!part) continue; // Optional stock slots can be absent.
@@ -222,8 +212,20 @@ bool WriteAppearanceRecord(const NFSPluginSDK::MW05::RideInfo& ride,
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 }
 
-bool MakeAppearance(const RankedVehicle& car, NFSPluginSDK::MW05::FECustomizationRecord* record) {
+bool StockExterior(const RankedVehicle& car,NFSPluginSDK::MW05::FECustomizationRecord* record) {
     using namespace NFSPluginSDK::MW05;
+    RideInfo stock(static_cast<CarType>(car.type));
+    if(!CreateStockRide(car.type,&stock))return false;
+    FECustomizationRecord stockRecord;
+    if(!WriteAppearanceRecord(stock,&stockRecord))return false;
+    mwappearance::StockGeometry(record->mInstalledParts,stockRecord.mInstalledParts);
+    return true;
+}
+bool MakeAppearance(const RankedVehicle& car, NFSPluginSDK::MW05::FECustomizationRecord* record,
+                    bool allowExterior,bool* customExterior) {
+    using namespace NFSPluginSDK::MW05;
+    static_assert(unsigned(CarSlotId::BasePaint)==mwappearance::GeometrySlots);
+    *customExterior=false;
     RideInfo stock(static_cast<CarType>(car.type));
     if (!CreateStockRide(car.type, &stock)) {
         Log(LogLevel::Error, "APPEARANCE_STOCK_INVALID model=%s spawn skipped", car.installed->model);
@@ -241,6 +243,10 @@ bool MakeAppearance(const RankedVehicle& car, NFSPluginSDK::MW05::FECustomizatio
                 candidate->mPartsTable[i] = stock.mPartsTable[i];
                 candidate->mPartsEnabled[i] = stock.mPartsEnabled[i];
             }
+            if(!allowExterior)for(unsigned i=0;i<mwappearance::GeometrySlots;++i) {
+                candidate->mPartsTable[i]=stock.mPartsTable[i];
+                candidate->mPartsEnabled[i]=stock.mPartsEnabled[i];
+            }
             valid = valid && WriteAppearanceRecord(*candidate, record);
             if (!valid) Log(LogLevel::Warning, "APPEARANCE_RETRY model=%s attempt=%u", car.installed->model, attempts);
             return valid;
@@ -249,13 +255,15 @@ bool MakeAppearance(const RankedVehicle& car, NFSPluginSDK::MW05::FECustomizatio
     unsigned changed = 0;
     for (std::size_t i = 0; i < std::size(chosen.mPartsTable); ++i)
         changed += chosen.mPartsTable[i] != stock.mPartsTable[i];
+    for(unsigned i=0;i<mwappearance::GeometrySlots;++i)
+        *customExterior|=chosen.mPartsTable[i]!=stock.mPartsTable[i];
     Log(LogLevel::Info, "APPEARANCE_READY model=%s randomized=%u changedParts=%u attempts=%u stockFallback=%u wheels=stock",
         car.installed->model, customized, changed, attempts, enabled && !customized);
     return true;
 }
 
 bool EventAttributeDetourOwned(unsigned address,const std::array<std::uint8_t,8>& actual) noexcept {
-    auto events=GetModuleHandleW(L"NFSMWEventLoader.asi");
+    auto events=GetModuleHandleW(L"MWEventLoader.asi");
     using Owns=unsigned(__cdecl*)(unsigned,unsigned);
     auto owns=events?reinterpret_cast<Owns>(GetProcAddress(events,"MWEL_AttributeHookOwnerV1")):nullptr;
     if(!owns||actual[0]!=0xE9)return false;

@@ -11,7 +11,7 @@ using Bytes=std::vector<unsigned char>;
 inline unsigned Word(const Bytes& b,size_t at){if(at>b.size()||b.size()-at<4)throw std::runtime_error("truncated skin resource");unsigned v;memcpy(&v,b.data()+at,4);return v;}
 inline void Put(Bytes& b,size_t at,unsigned v){if(at>b.size()||b.size()-at<4)throw std::runtime_error("skin field overflow");memcpy(b.data()+at,&v,4);}
 inline unsigned Hash(const char* s){unsigned h=~0u;while(*s)h=h*33+static_cast<unsigned char>(*s++);return h;}
-inline std::string Name(const char* family,unsigned slot){return std::string("LB_")+family+std::to_string(slot);}
+inline std::string Name(const char* family,unsigned slot,bool external=false){return std::string(external?"DUMMY_":"LB_")+family+std::to_string(slot);}
 inline void Append(Bytes& b,unsigned tag,const Bytes& data){if(data.size()>64*1024*1024)throw std::runtime_error("skin chunk limit");auto at=b.size();b.resize(at+8);Put(b,at,tag);Put(b,at+4,unsigned(data.size()));b.insert(b.end(),data.begin(),data.end());}
 struct Field {unsigned tag;size_t at,end;};
 inline std::vector<Field> Fields(const Bytes& b,size_t at,size_t end){std::vector<Field> out;if(end>b.size())throw std::runtime_error("skin range");while(at<end){auto tag=Word(b,at),n=Word(b,at+4);if(end-at<8||n>end-at-8)throw std::runtime_error("skin chunk extent");out.push_back({tag,at+8,at+8+n});at+=8+n;}return out;}
@@ -28,9 +28,30 @@ inline Bytes Decode(const Bytes& b){
  }return out;
 }
 struct Texture {Bytes descriptor,format,pixels;};
+inline bool HasExternalSlots(const Bytes& source){
+ std::vector<unsigned> indexed;
+ auto top=Fields(source,0,source.size());if(top.size()!=1||top[0].tag!=0xB3300000)return false;
+ for(auto block:Fields(source,top[0].at,top[0].end))if(block.tag==0xB3310000)
+  for(auto f:Fields(source,block.at,block.end)){
+   if(f.tag==0x33310003){
+    if((f.end-f.at)%24)return false;
+    for(auto at=f.at;at<f.end;at+=24){auto offset=Word(source,at+4),size=Word(source,at+8);
+     if(offset>source.size()||size>source.size()-offset||size<16)return false;
+     indexed.push_back(Word(source,at));}
+   }else if(f.tag==0x33310004){
+    if((f.end-f.at)%124)return false;
+    for(auto at=f.at;at<f.end;at+=124)indexed.push_back(Word(source,at+36));
+   }
+  }
+ for(unsigned slot=1;slot<=20;++slot)for(auto family:{"SKIN","WHEEL","SPINNER"}){
+  auto name=std::string("DUMMY_")+family+std::to_string(slot);
+  if(std::find(indexed.begin(),indexed.end(),Hash(name.c_str()))==indexed.end())return false;
+ }
+ return true;
+}
 inline void Validate(const Texture& t){auto& d=t.descriptor;if(d.size()!=124||t.format.size()!=32)throw std::runtime_error("skin metadata");unsigned short width,height;memcpy(&width,d.data()+68,2);memcpy(&height,d.data()+70,2);
  if(width!=height||width<128||width>2048||(width&(width-1))||d[74]!=32||Word(d,56)!=unsigned(width)*height*4||Word(d,60)!=0||t.pixels.size()!=Word(d,56))throw std::runtime_error("unsupported writable skin template");}
-inline Bytes Build(const Bytes& source){
+inline Bytes Build(const Bytes& source,bool external=false){
  Bytes info,table,descriptors,formats,pixels;auto top=Fields(source,0,source.size());if(top.size()!=1||top[0].tag!=0xB3300000)throw std::runtime_error("skin pack type");
  for(auto block:Fields(source,top[0].at,top[0].end)){
   if(block.tag==0xB3310000)for(auto f:Fields(source,block.at,block.end)){
@@ -45,9 +66,16 @@ inline Bytes Build(const Bytes& source){
  };
  auto skin=extract("DUMMY_SKIN1"),wheel=extract("DUMMY_WHEEL1");
  struct Entry {unsigned hash;Texture texture;};std::vector<Entry> entries;
- for(unsigned slot=13;slot<=20;++slot)for(auto family:{"SKIN","WHEEL","SPINNER"}){
-  auto t=strcmp(family,"SKIN")==0?skin:wheel;auto name=Name(family,slot);auto key=Hash(name.c_str());memset(t.descriptor.data(),0,36);memcpy(t.descriptor.data()+12,name.c_str(),name.size());Put(t.descriptor,36,key);Put(t.descriptor,44,0);Put(t.descriptor,52,~0u);t.descriptor[78]=1;Put(t.format,20,21);entries.push_back({key,std::move(t)});
+ for(unsigned slot=external?1u:5u;slot<=20;++slot)for(auto family:{"SKIN","WHEEL","SPINNER"}){
+  auto name=Name(family,slot,external);auto key=Hash(name.c_str());bool present=false;
+  if(external){
+   for(size_t at=0;at<table.size();at+=24)if(Word(table,at)==key)present=true;
+   for(size_t at=0;at<descriptors.size();at+=124)if(Word(descriptors,at+36)==key)present=true;
+   if(present)continue; // Do not shadow an installed native/mod texture.
+  }
+  auto t=strcmp(family,"SKIN")==0?skin:wheel;memset(t.descriptor.data(),0,36);memcpy(t.descriptor.data()+12,name.c_str(),name.size());Put(t.descriptor,36,key);Put(t.descriptor,44,0);Put(t.descriptor,52,~0u);t.descriptor[78]=1;Put(t.format,20,21);entries.push_back({key,std::move(t)});
  }
+ if(entries.empty())return {};
  std::sort(entries.begin(),entries.end(),[](const Entry& a,const Entry& b){return a.hash<b.hash;});Bytes keys,desc,dd,data;
  for(auto& e:entries){auto at=keys.size();keys.resize(at+8);Put(keys,at,e.hash);Put(e.texture.descriptor,48,unsigned(data.size()));desc.insert(desc.end(),e.texture.descriptor.begin(),e.texture.descriptor.end());dd.insert(dd.end(),e.texture.format.begin(),e.texture.format.end());data.insert(data.end(),e.texture.pixels.begin(),e.texture.pixels.end());}
  const char* pack="LB_PRIVATE_SKINS";auto packHash=Hash(pack);memset(info.data()+4,0,120);memcpy(info.data()+4,pack,strlen(pack));memcpy(info.data()+32,pack,strlen(pack));Put(info,96,packHash);

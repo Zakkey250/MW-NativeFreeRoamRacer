@@ -19,7 +19,7 @@ bool W2CRaceVehicle(void* ai,VehicleSnapshot& racer,VehicleSnapshot& player,bool
  const auto module=GetModuleHandleW(L"World2MWNativeLoader.asi");
  const auto active=module?reinterpret_cast<Active>(GetProcAddress(module,"W2MW_IsWorldActiveV1")):nullptr;
  bool human=localHuman&&BattleVtable(ai,0x8929F0);
- auto events=GetModuleHandleW(L"NFSMWEventLoader.asi");auto eventActive=events?reinterpret_cast<Active>(GetProcAddress(events,"MWEL_RaceActiveV1")):nullptr;
+ auto events=GetModuleHandleW(L"MWEventLoader.asi");auto eventActive=events?reinterpret_cast<Active>(GetProcAddress(events,"MWEL_RaceActiveV1")):nullptr;
  if((!active||!active())&&(!eventActive||!eventActive()))return fail(1);
  if(!human&&!BattleVtable(ai,kRacecarIVehicleAIVtable))return fail(15);
  void* vehicle=nullptr;void* back=nullptr;

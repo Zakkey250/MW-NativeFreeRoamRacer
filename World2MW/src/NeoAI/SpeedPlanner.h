@@ -5,8 +5,14 @@ namespace mwneo {
 // 3 hazard, 4 confidence, 5 vehicle spacing, 6 static obstacle, 7 blocked, 8 plan end.
 struct SpeedPlan {float target=0,maxCurvature=0;bool valid=false;unsigned constraint=0;float constraintDistance=0,constraintCurve=0;};
 inline SpeedPlan PlanSpeed(const Guidance& g,const Vehicle& v,const Profile& p){
- SpeedPlan result{};if(!g.status||g.count<2||g.count>MaxSamples||!std::isfinite(p.maxSpeed)||p.maxSpeed<=0||!std::isfinite(p.brakeDecel)||p.brakeDecel<=0||!std::isfinite(p.lateralAccel)||p.lateralAccel<=0||!std::isfinite(g.confidence)||!std::isfinite(g.obstacleDistance)||!std::isfinite(g.leadSpeed))return result;
- float speed=p.maxSpeed;const float horizon=SpeedHorizon(v.speed);
+ SpeedPlan result{};if(!g.status||g.count<2||g.count>MaxSamples||!std::isfinite(p.maxSpeed)||p.maxSpeed<0||!std::isfinite(p.brakeDecel)||p.brakeDecel<=0||!std::isfinite(p.lateralAccel)||p.lateralAccel<=0||!std::isfinite(g.confidence)||!std::isfinite(g.obstacleDistance)||!std::isfinite(g.leadSpeed))return result;
+ // Zero selects vehicle-limited acceleration. A finite target which moves
+ // ahead of the actual speed keeps full throttle on clear straights without
+ // introducing another fixed top speed or infinities into braking/control.
+ if(!std::isfinite(v.speed)||!std::isfinite(p.driveAccel)||p.driveAccel<=0)return result;
+ const float ceiling=p.maxSpeed>0?p.maxSpeed:std::abs(v.speed)+std::max(10.f,p.driveAccel*2.f);
+ if(!std::isfinite(ceiling))return result;
+ float speed=ceiling;const float horizon=SpeedHorizon(v.speed);
  const float execution=std::clamp(SteeringHorizon(v.speed,p)*.7f,12.f,45.f);
  for(uint32_t i=0;i<g.count;++i)if(!Finite(g.samples[i].position))return result;
  auto shapePoint=[&](uint32_t i){auto b=g.samples[i].position;if(!i||i+1>=g.count)return b;
@@ -30,7 +36,7 @@ inline SpeedPlan PlanSpeed(const Guidance& g,const Vehicle& v,const Profile& p){
   if((g.predictiveAvoidance&AuthoredObstacleAvoidance)&&before<i&&after>i)
    curve=std::max(curve,Curve(shapePoint(before),shapePoint(i),shapePoint(after)));
   result.maxCurvature=std::max(result.maxCurvature,curve);
-  float allowed=curve>.0001f?std::sqrt(p.lateralAccel/curve):p.maxSpeed;unsigned reason=1;
+  float allowed=curve>.0001f?std::sqrt(p.lateralAccel/curve):ceiling;unsigned reason=1;
   float width=s.widthLeft+s.widthRight;
   if(width<2*v.halfWidth+.5f){allowed=0;reason=2;}
   else if(width<5){float narrow=22.f+(width-2*v.halfWidth-.5f)*10;if(narrow<allowed){allowed=narrow;reason=2;}}
@@ -49,7 +55,7 @@ inline SpeedPlan PlanSpeed(const Guidance& g,const Vehicle& v,const Profile& p){
  if(LimitSteeringArc(g.predictiveAvoidance)&&Finite(g.aim)&&Finite(v.heading)){
   auto delta=Sub(g.aim,v.position);float square=DotXZ(delta,delta);
   if(square>16){float curve=2*std::abs(CrossXZ(UnitXZ(v.heading),delta))/square;
-   float limit=curve>.0001f?std::sqrt(p.lateralAccel/curve):p.maxSpeed;
+   float limit=curve>.0001f?std::sqrt(p.lateralAccel/curve):ceiling;
    if(limit<speed){speed=limit;result.constraint=1;result.constraintDistance=0;result.constraintCurve=curve;}
   }
  }
@@ -64,6 +70,6 @@ inline SpeedPlan PlanSpeed(const Guidance& g,const Vehicle& v,const Profile& p){
   if(limit<speed){speed=limit;result.constraint=g.leadVehicle?5:6;result.constraintDistance=g.obstacleDistance;result.constraintCurve=0;}
  }
  if(g.status==2){speed=0;result.constraint=7;result.constraintDistance=0;result.constraintCurve=0;}
- result.target=std::clamp(speed,0.f,p.maxSpeed);result.valid=std::isfinite(result.target);return result;
+ result.target=std::clamp(speed,0.f,ceiling);result.valid=std::isfinite(result.target);return result;
 }
 }

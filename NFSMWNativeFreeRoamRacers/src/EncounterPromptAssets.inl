@@ -31,7 +31,7 @@ bool PromptAdapterSurface(std::uintptr_t va,const char* bytes,std::size_t size) 
     if(PromptBytes(va,bytes,size))return true;
     // EventLoader installs these two ABI-preserving adapters for course maps.
     // Accept only a direct jump into that loaded image, without version gates.
-    const auto module=GetModuleHandleW(L"NFSMWEventLoader.asi");
+    const auto module=GetModuleHandleW(L"MWEventLoader.asi");
     const bool accepted=nfrr_prompt::CallSurface(reinterpret_cast<void*>(Address(va)),bytes,size,module);
     Log(accepted?LogLevel::Info:LogLevel::Warning,
         "ENCOUNTER_ICON surface=%08X eventLoaderAdapter=%u callOriginalEntry=1",unsigned(va),unsigned(accepted));

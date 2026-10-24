@@ -61,6 +61,20 @@ static_assert(offsetof(NFSPluginSDK::MW05::UserProfile,mTheCareerSettings)+
     offsetof(NFSPluginSDK::MW05::CareerSettings,CurrentCash)==0xB4);
 static_assert(offsetof(NFSPluginSDK::MW05::UserProfile,mTheCareerSettings)+
     offsetof(NFSPluginSDK::MW05::CareerSettings,CurrentBin)==0xB0);
+bool EventEncounterTargetDetourOwned(unsigned address,const std::array<std::uint8_t,8>& actual) noexcept {
+    if(address!=0x423860||actual[0]!=0xE9)return false;
+    auto events=GetModuleHandleW(L"MWEventLoader.asi");
+    using Owns=unsigned(__cdecl*)(unsigned,unsigned);
+    auto owns=events?reinterpret_cast<Owns>(GetProcAddress(events,"MWEL_EncounterTargetHookOwnerV1")):nullptr;
+    if(!owns)return false;
+    std::int32_t displacement=0;std::memcpy(&displacement,actual.data()+1,4);
+    const auto target=Address(address)+5+displacement;
+    MEMORY_BASIC_INFORMATION region{};
+    return VirtualQuery(reinterpret_cast<void*>(target),&region,sizeof(region))&&region.AllocationBase==events&&region.State==MEM_COMMIT&&
+        !(region.Protect&(PAGE_GUARD|PAGE_NOACCESS))&&
+        (region.Protect&(PAGE_EXECUTE|PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY))&&
+        owns(unsigned(Address(address)),unsigned(target));
+}
 bool ValidateEncounterBattleSurface() noexcept {
     struct Guard {std::uintptr_t va; const char* bytes; unsigned size;};
     const Guard guards[]={
@@ -100,6 +114,12 @@ bool ValidateEncounterBattleSurface() noexcept {
         {0x00428BCA,"\xe8\x61\x03\x36\x00",5}
     };
     for(const auto& guard:guards) if(std::memcmp(reinterpret_cast<void*>(Address(guard.va)),guard.bytes,guard.size)) {
+        if(guard.va==0x00423860){
+            std::array<std::uint8_t,8> actual{};
+            if(SafeRead(reinterpret_cast<void*>(Address(guard.va)),&actual)&&EventEncounterTargetDetourOwned(guard.va,actual)){
+                Log(LogLevel::Info,"ENCOUNTER_SURFACE EventLoader_target_chain=1 native_trampoline_verified=1");continue;
+            }
+        }
         if(guard.va==0x00788F30){
             using Compatible=unsigned(__cdecl*)();
             auto module=GetModuleHandleW(L"World2MWNativeLoader.asi");
@@ -356,7 +376,9 @@ battle::Car EncounterCar(const VehicleSnapshot& car) noexcept {
         {car.position.x,car.position.y,car.position.z},{car.heading.x,car.heading.y,car.heading.z},std::abs(car.speed),true};
 }
 bool QueueEncounterBattle(const VehicleSnapshot& player,const VehicleSnapshot& rival) noexcept {
-    if(!g_battleSurface||EncounterBattleBusy()) return false;
+    if(!g_battleSurface||EncounterBattleBusy()) {
+        Log(LogLevel::Warning,"ENCOUNTER_QUEUE refused reason=%s",!g_battleSurface?"unsupported-native-surface":"battle-busy");return false;
+    }
     g_battle={};g_battle.player=EncounterCar(player).identity;g_battle.rival=EncounterCar(rival).identity;
     g_battle.pending=true;
     return true;

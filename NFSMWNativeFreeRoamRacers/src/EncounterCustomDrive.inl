@@ -24,9 +24,17 @@ bool CustomDriveHint(void* ai,std::uintptr_t caller,ULONGLONG now,Vec3& aim) noe
 }
 void DispatchCustomDrive(void* ai,std::uintptr_t caller,const CustomDriveVector* native,ULONGLONG now) {
     Vec3 aim{};
-    if((caller==Address(0x00428FED)&&W2CDirectDriveHint(ai,now,aim))||CustomDriveHint(ai,caller,now,aim)) {
+    if(caller==Address(0x00428FED)&&W2CDirectDriveHint(ai,now,aim)) {
         if(caller==Address(0x00428FED)&&native){for(auto& row:g_w2cCommands)if(row.ai==ai&&row.valid){row.nativeAim={native->x,native->y,native->z};break;}}
+        // The legacy W2C provider returns SDK-labelled YZX values.
         const auto encoded=ToUMath(aim);++g_customDriveCalls;g_originalCustomDrive(ai,&encoded);
+    } else if(CustomDriveHint(ai,caller,now,aim)) {
+        // EncounterGeometry and DirectionalTrail use physical XYZ. 00405310
+        // copies raw +0/+4/+8; ToUMath would permute this to YZX a second time.
+        CustomDriveVector encoded{};
+        static_assert(sizeof(encoded)==sizeof(aim));
+        std::memcpy(&encoded,&aim,sizeof(encoded));
+        ++g_customDriveCalls;g_originalCustomDrive(ai,&encoded);
     } else g_originalCustomDrive(ai,native);
 }
 void __fastcall CustomDriveHook(void* ai,void*,const CustomDriveVector* native) {
@@ -63,3 +71,5 @@ void InstallCustomDriveHook() noexcept {
         "ENCOUNTER_CUSTOM driveHook=%u callerScoped=00428FED failedFallback=Stable",unsigned(g_customDriveInstalled));
     InstallW2CCurvatureHook();
 }
+
+

@@ -1,4 +1,4 @@
-# MW Native Free Roam Racer — v0.1.2
+# MW Native Free Roam Racer — v0.1.3
 
 Roaming AI racers and Underground 2-style encounter battles for **Need for Speed Most Wanted (2005)**. NFRR is the main mod; the latest **NFSMW Limit Breaker is included as an optional, recommended companion**. NFRR also works without LB, within normal vehicle/audio limits.
 
@@ -6,9 +6,9 @@ Roaming AI racers and Underground 2-style encounter battles for **Need for Speed
 
 ## Download / 説明書
 
-- [v0.1.2 release](https://github.com/Zakkey250/MW-NativeFreeRoamRacer/releases/tag/v0.1.2)
+- [v0.1.3 release](https://github.com/Zakkey250/MW-NativeFreeRoamRacer/releases/tag/v0.1.3)
 - [English guide](NFSMWNativeFreeRoamRacers/docs/GUIDE_EN.md) / [日本語説明書](NFSMWNativeFreeRoamRacers/docs/GUIDE_JA.md)
-- [Changes since 0.1.1 / パッチノート](PATCH_NOTES_v0.1.2.md)
+- [Changes since 0.1.1 / パッチノート](PATCH_NOTES_v0.1.3.md)
 - [Validation / 検証範囲](VALIDATION.md) / [Build / ビルド](BUILD.md)
 - [LB companion source and guide](NFSMWLimitBreaker/README_EN.md) / [LB日本語](NFSMWLimitBreaker/README_JA.md)
 - [Optional voice extractor / 音声抽出器](NFSU2EncounterAudioExtractor/README.md)
@@ -16,8 +16,8 @@ Roaming AI racers and Underground 2-style encounter battles for **Need for Speed
 
 ## Features / 機能
 
-- **New in 0.1.2: optional win-streak wager battles for Custom AI.** Each win adds 5% of the base reward to the next stake; losing costs that same amount. Enable `[Encounter] WinStreakWager = 1` (default OFF). Safehouse/shop/event transitions reset the streak.
-- **0.1.2新機能：Custom AI専用の連勝ボーナス付き賭けバトル。** 1勝ごとに基本報酬の5%を次の掛け金へ加算。敗北で同額を失います。`WinStreakWager = 1`で有効化（既定OFF）。セーフハウス・ショップ・通常イベントへの移行でリセット。
+- **New in 0.1.3: optional win-streak wager battles for Custom AI.** Each win adds 5% of the base reward to the next stake; losing costs that same amount. Enable `[Encounter] WinStreakWager = 1` (default OFF). Safehouse/shop/event transitions reset the streak.
+- **0.1.3新機能：Custom AI専用の連勝ボーナス付き賭けバトル。** 1勝ごとに基本報酬の5%を次の掛け金へ加算。敗北で同額を失います。`WinStreakWager = 1`で有効化（既定OFF）。セーフハウス・ショップ・通常イベントへの移行でリセット。
 - Independent racers: default 6, configurable 1–15; management radius 600 m, markers 200 m.
 - Price/performance-based car selection, career-aware tuning, random appearance and persistent catalog calibration.
 - Use the configured Join Event action while following a rival. The leader chooses the route; a 300 m gap decides the result.
@@ -31,13 +31,13 @@ Roaming AI racers and Underground 2-style encounter battles for **Need for Speed
 
 ## Event Loader advance compatibility / Event Loader先行対応
 
-0.1.2 prepares for the optional NFSMW Event Loader with independent editor settings, event-AI ownership coordination and compatible notification texture hooks. **Event Loader is not included or required.** These changes do not publish Event Loader, new race types or expanded leaderboards. Roaming racers and encounter battles remain usable without it.
+0.1.3 improves compatibility with the upcoming optional Event Loader (MWEventLoader.asi) with independent editor settings, event-AI ownership coordination and compatible notification texture hooks. **Event Loader is not included or required.** These changes do not publish Event Loader, new race types or expanded leaderboards. Roaming racers and encounter battles remain usable without it.
 
 任意のNFSMW Event Loaderに向け、エディタ設定の分離・イベントAI所有権調整・開始アイコンの素材フック共存を先行対応。**Event Loaderは非同梱・不要でも動作**します。新レース種目や順位表拡張の公開を含みません。
 
 ## Compatibility / 対応範囲
 
-Windows, ASI loader and Visual C++ x86 runtime. Exact NFRR target: NFSPatcher English 1.3 + LAA `speed.exe`, 6,029,312 bytes, SHA-256:
+Windows, ASI loader and Visual C++ x86 runtime. Supported NFRR targets include NFSPatcher English 1.3 original/LAA and the recognized Redux 3.04 LAA executable. The commonly used EN1.3 LAA target has SHA-256:
 
 ```text
 B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06
@@ -56,3 +56,9 @@ No game executable, car assets, saves, generated caches or extracted voices are 
 Original code and documentation by Zakkey250 are licensed under the [MIT License](LICENSE.md). Third-party components retain their respective licenses. This license grants no rights to game assets, extracted voices, or other third-party material. Unofficial fan project; not affiliated with or endorsed by Electronic Arts.
 
 Zakkey250が制作したコードと文書は[MIT License](LICENSE.md)で公開します。第三者コンポーネントには、それぞれのライセンスが引き続き適用されます。ゲーム資産・抽出音声・その他の第三者素材に関する権利を付与するものではありません。
+
+## 0.1.3 Hotfix
+
+Custom AI chase-coordinate correction, current Event Loader integration and add-on vehicle recognition, with the updated optional LB companion. See [English / 日本語 patch notes](PATCH_NOTES_v0.1.3.md) and [validation](VALIDATION.md).
+
+対応EXEはNFSPatcher EN1.3通常版・LAA版、および識別済みRedux 3.04版です。実ハッシュ一覧は `NFSMWNativeFreeRoamRacers/include/ExecutableTargets.h`。すべてのMOD構成を保証するものではありません。

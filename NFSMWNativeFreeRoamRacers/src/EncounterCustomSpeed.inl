@@ -86,3 +86,4 @@ void InstallCustomSpeedHook() noexcept {
     Log(g_customSpeedInstalled?LogLevel::Info:LogLevel::Warning,
         "ENCOUNTER_CUSTOM speedHook=%u callerScoped=00428FFA nativeStopPreserved=1 roamingPace=1 failedFallback=native-speed",unsigned(g_customSpeedInstalled));
 }
+

@@ -1,29 +1,33 @@
-# NFRR 0.1.2 validation
+# NFRR 0.1.3 Hotfix validation / 検証記録
 
-Release preparation on 2026-10-14. Baseline: published NFRR 0.1.1. Latest development sources were staged separately; the release version was not installed into Main or W2C Sandbox.
+Prepared 2026-10-25 against the published v0.1.2 source and assets. The release uses freshly rebuilt NFRR 0.1.3 and LB 0.1.3-resource-headroom.5 from the curated public source tree.
 
-## Build and offline checks
+## Build, static and isolated checks
 
-- NFRR 0.1.2: clean Release Win32 build from the public source layout, including minimal optional-provider headers.
-- LB: current 0.1.3-resource-headroom.2 source rebuilt successfully; 7,934 native checks passed. The bundled ASI is the accepted companion artifact from the 2026-10-14 handoff, SHA-256 `EBE0D21EE0995BE6C2989A72629DDD0E51C667AD9B46D3E4F747742A49EE5590`. Local rebuilds may differ in layout/debug records/toolchain and do not replace the accepted runtime artifact.
-- NFRR aggregate cache/AI/geometry/audio/population fixture suite: 9,274 checks passed.
-- Reward/wager helper checks: 1,500 Blacklist/streak cases, plus cash limits, reset and police/rival identity checks.
-- Marker/prompt guard tests: six racers over 120 seconds of continuous allocation failure produced 18 shared probes and four warnings; native and recognized adapter surfaces accepted, unrelated/private/unreadable destinations rejected.
-- Update-notice tests: 68 passed, including numeric release selection, prerelease-to-stable progression, language choice and serialized notification clients.
-- Diagnostic logger tests: missing/empty/malformed/OFF configurations create no log, skip formatting, create no logging worker and skip telemetry. ON creates output.
-- Actual shipping NFRR/LB DLLs loaded in isolated unsupported test hosts: missing/invalid/OFF created no diagnostic log; ON created diagnostic output. These hosts intentionally fail game identity checks and do not install game hooks.
-- ZIPs and SHA-256 manifests are checked against staged file contents. Source archives contain no compiled binaries, installed catalogs, saves, generated caches or game assets.
+- Clean Release Win32 builds passed for NFRR and LB. Public source archives include the required support-header closure and upstream licenses.
+- Focused Custom AI raw-coordinate/geometry/chase regression suite: 354 checks passed. The actual native argument layout, height and signed axes are tested; the W2C conversion branch is retained.
+- LB native harness: 9,046 checks passed, including resource policies, skin ownership and dispatch-queue allocation/growth checks.
+- Update-notice/executable identity tests: 68 passed. An obsolete test incorrectly rejected the legitimate same-size EN1.3/LAA pair; it now checks crossed pairs with different sizes, without relaxing runtime target validation.
+- File-backed executable identities and native hook guards passed against the exact primary NFSPatcher EN1.3 executable and the supported Redux 3.04 executable. The stale static car-table assertion was replaced with checks of the current native-accessor validation path.
+- Production logger: missing, empty, malformed, OFF and ON configurations passed. OFF bypasses formatting, file creation, the logging worker and telemetry traversal.
+- Both actual shipping ASIs passed isolated unsupported-host load checks in all five logging modes. These hosts reject game identity and do not install game hooks. Ten ASI cases plus five production-logger cases passed.
+- Source/default INIs ship diagnostic logging OFF. Deep audio and frame timing additionally require an explicit diagnostic opt-in while logging is ON. Functional catalog caching and safety checks remain enabled.
+- Installed INIs, game resources, saves, profiles, Shadow and vault were not changed during release preparation. No game lab or full game copy was created.
 
-## Gameplay evidence and limits
+## Earlier real-game evidence and limits
 
-The underlying development functionality has previous user gameplay acceptance, including the win-streak system and current LB resource improvements. The final version-stamped NFRR build has not been run in Main/Sandbox in this task, as requested for update-notice testing. Offline and unsupported-host load checks do not certify new in-game icon visibility, audio, every car pack or all race transitions.
+The 2026-10-25 chase investigation measured native target error above 4,468 m before the fix and below 2.77 m after it in bounded encounters, observing real body movement and native AI ownership. Different roads and vehicles were used; this is not a matched performance benchmark or full-battle acceptance. Evidence: `diagnostics/nfrr-custom-chase-20261025/FINAL-REPORT.md` in the development workspace.
 
-Event Loader support is advance compatibility. Event Loader itself is not part of this release. Skin/model/audio/vehicle budgets remain separate, and general invisible-body or 16-car/all-MOD compatibility is not guaranteed.
+LB .5 previously passed bounded actual-game tests with Event Loader, an eight-racer field, heat 5 and up to 31 total vehicles. That does not establish standalone NFRR chase acceptance or every combination of cars/MODs.
+
+The final version-stamped release ASIs were rebuilt and checked in isolation in this publication task. They were not launched in a real game here. Earlier gameplay evidence is not presented as fresh gameplay acceptance of these exact binaries. The production Save Virtualizer verifier refused to run on the development host because it requires ZAKKEY and its local game paths; no production runtime acceptance is claimed.
+
+The full aggregate legacy NFRR harness had a pre-existing catalog-fixture failure/crash in the chase investigation. It is not reported as passing. This release reports the focused chase suite separately.
+
+Event Loader is in preparation, optional and not bundled. Redux support applies to the recognized executable and validated hook surfaces, not every Redux/MOD combination. Vehicle, skin, model and audio capacities remain separate; no universal invisible-body or 16-car guarantee is made.
 
 ## 日本語
 
-公開0.1.1を基点とし、配布用の独立ソースからビルド・オフライン検査を実施しました。NFRR 9,274件、LB 7,934件、更新通知68件、報酬・掛け金1,500ケースなどが成功。ログOFF時の非作成とON時の出力も、実ロガーおよび配布DLLの隔離読み込みで確認しました。
+NFRRとLBを配布ソースからクリーンビルドし、Custom AIの354件、LBの9,046件、更新通知68件、ロガー／実ASI読み込みの15ケースを検査しました。対応EXEの実バイトとフック面も静的検査しています。診断ログは既定OFFです。
 
-同梱LBは引き継ぎで指定された実走採用済み成果物です。再ビルドは成功していますが、ローカル再ビルドを採用済みバイナリと同一ハッシュだとは扱いません。
-
-更新通知の確認を妨げないため、バージョンを打ったNFRRはMain・Sandboxへ導入していません。既存のユーザー実走確認と今回のビルド検査を区別し、最終ビルドの新たな実走・全車種・全MOD構成の保証は行いません。Event Loader本体は非同梱です。
+今回、ゲームの起動や実ゲームへの配備は行っていません。以前の追尾修正・LB実走記録と、今回の最終バイナリのビルド／隔離検査は区別しています。旧集約ハーネスの既存失敗も合格件数に含めていません。公開はユーザーの明示依頼に基づきます。

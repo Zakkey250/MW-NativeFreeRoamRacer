@@ -1,11 +1,11 @@
-# Diagnostic logging coverage for NFRR 0.1.2
+# Diagnostic logging coverage for NFRR 0.1.3
 
 This inventory covers the authored runtime modules shipped in this release, and the unchanged optional audio-extractor asset. Game data, third-party loaders and unrelated installed MODs are outside this package.
 
 | Component | Switch and OFF default | Disabled behavior | Verification |
 | --- | --- | --- | --- |
 | NFRR | `[Diagnostics] Logging=0`; only exact `1` opts in | No diagnostic file, formatting or logging worker; telemetry and render-resource traversal bypassed; deep audio/frame diagnostics require opt-in | Production logger tests: missing, empty, malformed, OFF and ON; release-binary load checks |
-| Limit Breaker | `[Diagnostics] Logging=0`; only exact `1` opts in | Log function returns before formatting/file access; no diagnostic polling loop or diagnostic exception handler | Source gates, 7,934 native checks; release-binary missing/invalid/OFF/ON checks |
+| Limit Breaker | `[Diagnostics] Logging=0`; only exact `1` opts in | Log function returns before formatting/file access; no diagnostic polling loop or diagnostic exception handler | Source gates, 9,046 native checks; release-binary missing/invalid/OFF/ON checks |
 | Voice extractor | No diagnostic logger shipped | `manifest.csv` and `summary.json` are functional extraction results, not diagnostic logs | Existing 1.1.0 no-decoder asset retained; no new runtime logger |
 
 OFF does not disable catalog calibration/cache, population APIs, safe allocation checks, update notices, or extracted-audio manifests. Those are functional operations.

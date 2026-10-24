@@ -11,6 +11,7 @@ struct SpawnPreparation {
     std::uint64_t catalogGeneration=0,started=0,lastAdvance=0;
     std::string model;
     bool continuation=false;
+    bool customExterior=false;
 };
 SpawnPreparation g_spawnPreparation;
 // The SDK constructor calls native code! optional keeps DLL/static startup

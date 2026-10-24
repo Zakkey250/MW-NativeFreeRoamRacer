@@ -24,7 +24,9 @@ void __fastcall Alpha54Speed(void* owner,void*,float speed) {
 }
 void __fastcall Alpha53Drive(void* owner,void*,const CustomDriveVector* aim) {
     ++alpha53DriveCalls;alpha53DriveOwner=owner;alpha53DrivePointer=aim;
-    if(aim) alpha53DriveAim=FromUMath(*aim);
+    // 00405310 copies raw +0/+4/+8 into the native XYZ drive target. Do not
+    // decode and re-encode with the same SDK labels: that hides axis errors.
+    if(aim) std::memcpy(&alpha53DriveAim,aim,sizeof(alpha53DriveAim));
 }
 bool __fastcall Alpha32Path(void* nav,void*,const Vec3* pos,const Vec3* heading,bool flag) {
     ++alpha32PathCalls;alpha32PathNav=nav;alpha32PathPosition=pos;alpha32PathHeading=heading;alpha32PathFlag=flag;
