@@ -2,18 +2,27 @@ param(
     [Parameter(Mandatory=$true)][string]$GameExe
 )
 $ErrorActionPreference='Stop'
-$expectedSize=6029312
+$expectedSizes=@(6029312,5926912)
 $hashes=@(
     '80774C2E5D619B4F120B48D4462896FD504C263399D203A238769CFFDE1D253C',
-    'B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06'
+    'B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06',
+    '0C5675A08CD71FD6D31CA87E992A915054BD8B80D268BFF0561D7ECC2067E342'
 )
 $file=Get-Item -LiteralPath $GameExe
 $hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $GameExe).Hash
-if($file.Length -ne $expectedSize -or $hash -notin $hashes){
+if($file.Length -notin $expectedSizes -or $hash -notin $hashes){
     throw "Unsupported executable: size=$($file.Length) sha256=$hash"
 }
 $bytes=[IO.File]::ReadAllBytes($file.FullName)
 $sites=@(
+    @{Name='skin-recolour-prologue'; Offset=0x33B010; Expected=[byte[]](0x83,0xEC,0x44,0x8B,0x44,0x24,0x48)},
+    @{Name='skin-recolour-cache-flag'; Offset=0x33B061; Expected=[byte[]](0xA1,0x18,0x0A,0x9B,0)},
+    @{Name='skin-recolour-index-replay'; Offset=0x33B320; Expected=[byte[]](0x8B,0x11,0x8B,0x1E,0x89,0x5C,0x95,0)},
+    @{Name='car-part-model-pool'; Offset=0x3376C0; Expected=[byte[]](0x6A,0,0x68,0xC4,0x48,0x8B,0,0x68,0,4,0,0,0x6A,0x18,0xE8,0x0D,0xEC,0xD2,0xFF)},
+    @{Name='resident-texture-pack-loader'; Offset=0x107B50; Expected=[byte[]](0x53,0x56,0x57,0x8B,0x7C,0x24,0x10,0x8B,0x07)},
+    @{Name='skin-slot-search'; Offset=0x35D29E; Expected=[byte[]](0x75,0x1B,0xBA,0x01,0,0,0)},
+    @{Name='vehicle-render-load'; Offset=0x35D220; Expected=[byte[]](0x56,0x8B,0xF1,0x8B,0x46,0x44)},
+    @{Name='ride-composite-name'; Offset=0x347F10; Expected=[byte[]](0x83,0xEC,0x40,0x56,0x57,0x8B,0x7C,0x24,0x4C)},
     @{Name='audio-mixer-pool-mask'; Offset=0xCC3A9; Expected=[byte[]](0x25,0x00,0x30,0x56,0x00,0x05,0x00,0x40,0x00)},
     @{Name='traffic-capacity-hook-prologue'; Offset=0x1EBD0; Expected=[byte[]](0x53,0x55,0x8B,0xD9,0x8B,0x83,0x94,0,0,0)},
     @{Name='vehicle-demand-compare'; Offset=0x287817; Expected=[byte[]](0x83,0xF8,0x14)},

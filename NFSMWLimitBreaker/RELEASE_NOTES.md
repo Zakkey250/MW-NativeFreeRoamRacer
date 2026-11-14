@@ -1,3 +1,9 @@
+# Limit Breaker 0.1.3-resource-headroom.6 / NFRR 0.1.4 companion
+
+- Adds a guarded LAA/Unlimiter car streaming extension. The recognized 115 MiB arena can grow to 256 MiB by default, with 160, 192 and 224 MiB alternatives. The same size applies at world initialization and reload. Restart after a configuration change.
+- 対応LAA・Unlimiter環境の車両ストリーミング領域を段階的に拡張できます。既定256 MiB、選択肢160／192／224 MiB。初回読み込みと再読み込みで同じサイズを使います。変更後は完全再起動してください。
+- Logical vehicle limit: 32. Audio expansion and diagnostic logging remain off by default. / 論理車両上限は32台。音声拡張と診断ログは既定OFFです。
+
 # Limit Breaker 0.1.3-resource-headroom.5 / NFRR 0.1.3 Hotfix companion
 
 Compared with the .2 companion in NFRR 0.1.2: fix the 24-pair AI dispatch overflow (512 reserved pairs plus growth), reconcile verified Unlimiter skin slots 13–20, invalidate recoloring caches on dimension changes, and default PartModelSlots to 8192 (168 KiB above stock). Logical vehicle limit stays 32; engine audio expansion and diagnostic logging default OFF. Existing settings are preserved when users merge updates.

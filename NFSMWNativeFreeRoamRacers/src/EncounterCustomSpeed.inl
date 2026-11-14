@@ -58,6 +58,17 @@ void DispatchCustomSpeed(void* ai,std::uintptr_t caller,float native,ULONGLONG n
         if(result>native) ++g_customSpeedCalls;
         if(std::isfinite(native)&&native<=.1f) ++g_customSpeedStops;
     }
+    if(g_customSpeedInstalled&&caller==Address(0x00428FFA)&&RpdCustomScope()==rpd_ai_contract::CustomFreeRun){
+        if(auto* row=W2CCommand(ai,now)){
+            // CustomAI race pace uses the issued corner curvature. Preserve
+            // native stopped/occlusion decisions and all native pedal control.
+            void* nav=nullptr;unsigned blocked=0,avoidable=0;
+            AudioRead(static_cast<unsigned char*>(ai)+0x24,&nav);
+            if(nav){AudioRead(static_cast<unsigned char*>(nav)+0x58,&blocked);AudioRead(static_cast<unsigned char*>(nav)+0x5C,&avoidable);}
+            result=row->corridorHold?0:encounter_custom::InterceptorRaceSpeed(native,row->issuedCurvature,blocked||avoidable);
+            static ULONGLONG next=0;if(now>=next){next=now+2000;Log(LogLevel::Info,"RPD_CUSTOM_RACE_PACE handle=%u native=%.3f applied=%.3f curvature=%.6f blocked=%u corridor_hold=%u",row->handle,native,result,row->issuedCurvature,blocked,unsigned(row->corridorHold));}
+        }
+    }
     W2CTraceSpeed(ai,caller,native,result,now);
     g_originalCustomSpeed(ai,result);
 }

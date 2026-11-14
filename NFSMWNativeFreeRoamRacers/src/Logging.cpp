@@ -27,9 +27,6 @@ DWORD WINAPI Writer(void*) {
  }
 }
 }
-// Kept as API-compatible scope markers; the background writer owns the handle.
-LogBatch::LogBatch() noexcept {}
-LogBatch::~LogBatch() noexcept {}
 bool LoggingEnabled() noexcept {return g_loggingEnabled;}
 void InitializeLogging(HMODULE module) noexcept {
  wchar_t ini[MAX_PATH]{},path[MAX_PATH]{};

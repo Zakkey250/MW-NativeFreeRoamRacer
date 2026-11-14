@@ -17,7 +17,7 @@ struct Driver {
  // Opt-in: only the event loader's owned racers enable the grip guard; other users of this header (NFRR) are unchanged.
  float gripCeiling=0,understeerTime=0,steerSaturation=0,understeerPeak=0,landingLearningHold=0;bool gripGuard=false;
  void Reset(){float grip=gripCeiling;bool guard=gripGuard;*this={};gripCeiling=grip;gripGuard=guard;}
- Controls Update(const Vehicle& v,const Guidance& g,const Profile& profile){
+ Controls Update(const Vehicle& v,const Guidance& g,const Profile& profile,bool intentionalDrift=false){
   previewBraking=false;
   Controls out{};float dt=std::clamp(v.dt,.001f,.1f);
   if(!Finite(v.position)||!Finite(v.heading)||!std::isfinite(v.speed)||!Finite(g.aim)||!g.status)return out;
@@ -34,7 +34,7 @@ struct Driver {
   float deltaYaw=std::atan2(CrossXZ(lastHeading,h),DotXZ(lastHeading,h));
   if(gripGuard&&(g.predictiveAvoidance&SupportedAirborne))landingLearningHold=.35f;
   else landingLearningHold=std::max(0.f,landingLearningHold-dt);
-  bool learningReady=landingLearningHold==0;
+  bool learningReady=landingLearningHold==0&&!intentionalDrift;
   response.Observe(v,g,profile,deltaYaw,recovery==Recovery::Normal&&learningReady);
   brakes.Observe(v,g,profile,std::max(0.f,-effort),recovery==Recovery::Normal&&moved<10&&learningReady);
   float turn=deltaYaw/dt;

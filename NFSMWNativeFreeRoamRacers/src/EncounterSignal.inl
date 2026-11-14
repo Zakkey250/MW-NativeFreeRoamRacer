@@ -1,7 +1,7 @@
 // Native prompt/input adapter. Battle writes are deferred to the frame update.
 // Native addresses are specific to the SHA-256-checked NFSPatcher LAA image.
 constexpr std::uintptr_t kEncounterHudJoy = 0x0057C660;
-constexpr std::uintptr_t kEncounterQueuePeek = 0x00633DC0;
+constexpr std::uintptr_t kEncounterPeekCall = 0x0057C73D;
 constexpr std::uintptr_t kEncounterPeekReturn = 0x0057C742;
 constexpr std::uintptr_t kEncounterMenuUpdate = 0x0057BBC0;
 constexpr std::uintptr_t kEncounterMenuVtable = 0x008A2524;
@@ -11,12 +11,11 @@ constexpr std::uintptr_t kEncounterSetAnimation = 0x00514D10;
 constexpr std::uint32_t kEncounterEngageAction = 46;
 constexpr ULONGLONG kEncounterFollowGraceMs = 2000;
 using EncounterJoyFn = void(__thiscall*)(void*, void*);
-using EncounterPeekFn = void*(__thiscall*)(void*, void**);
 // The native HUD walker pushes IPlayer* at 0058CE3B; Update ends RET 4 at
 // 0057BD0C. The argument is unused by this widget but remains ABI-mandatory.
 using EncounterMenuFn = void(__thiscall*)(void*, void*);
 EncounterJoyFn g_encounterOriginalJoy = nullptr;
-EncounterPeekFn g_encounterOriginalPeek = nullptr;
+void* g_encounterPeekContinuation = nullptr;
 EncounterMenuFn g_encounterOriginalMenu = nullptr;
 bool g_encounterEnabled = false;
 bool g_encounterFaulted = false;
@@ -337,11 +336,6 @@ void EncounterFault() noexcept {
     Log(LogLevel::Error, "ENCOUNTER exception; signal module disabled, native forwarding/population unchanged");
 }
 
-bool IsEncounterPeekContext(const std::uintptr_t caller, void* queue, void* context) noexcept {
-    return caller == Address(kEncounterPeekReturn) && context &&
-        queue == static_cast<std::uint8_t*>(context) + 0x30;
-}
-
 void __fastcall EncounterJoyHook(void* hud, void*, void* player) {
     // Native routing/population of mActionQ happens INSIDE this function.
     void* previous = g_encounterJoyContext;
@@ -351,19 +345,32 @@ void __fastcall EncounterJoyHook(void* hud, void*, void* player) {
     g_encounterJoyContext = previous;
 }
 
-void* __fastcall EncounterPeekHook(void* queue, void*, void** output) {
-    const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
-    void* result = g_encounterOriginalPeek(queue, output);
-    if (IsEncounterPeekContext(caller, queue, g_encounterJoyContext)) {
-        __try {
-            void* item = nullptr;
-            EncounterAction action{};
-            if (SafeRead(output, &item) && SafeRead(item, &action))
-                ObserveEncounterAction(g_encounterJoyContext, action);
-        } __except (EXCEPTION_EXECUTE_HANDLER) { EncounterFault(); }
+bool ReadEncounterPeekAction(void* hud, void* item, EncounterAction& action) noexcept {
+    return hud && hud == g_encounterJoyContext && item && SafeRead(item, &action);
+}
+
+void __stdcall ObserveEncounterPeekResult(void* hud, void* item) noexcept {
+    __try {
+        EncounterAction action{};
+        if (ReadEncounterPeekAction(hud, item, action)) ObserveEncounterAction(hud, action);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { EncounterFault(); }
+}
+
+// Observe the HUD's local output after the original CALL/RET. W2C RC4 owns
+// the shared Peek entry and expects this native return address; its facilities
+// can consume the input by clearing the output before we see it. Keep both
+// that entry and the CALL intact, including all other Peek callers.
+void __declspec(naked) EncounterPeekReturnHook() {
+    __asm {
+        pushfd
+        pushad
+        push dword ptr [esp + 0x38] // original [esp+0x14]: Peek's output
+        push ebp                     // HUD this pointer, set by native Joy
+        call ObserveEncounterPeekResult
+        popad
+        popfd
+        jmp dword ptr [g_encounterPeekContinuation]
     }
-    // Do not drain/rewrite the queue or steal real event/safehouse input.
-    return result;
 }
 
 void __fastcall EncounterMenuHook(void* widget, void*, void* player) {
@@ -420,8 +427,10 @@ bool ValidateEncounterSurface() noexcept {
     struct Guard { std::uintptr_t address; const char* bytes; std::size_t size; };
     const Guard guards[] = {
         {kEncounterHudJoy, "\x64\xA1\x00\x00\x00\x00\x6A\xFF", 8},
-        {kEncounterQueuePeek, "\x83\x39\x00\x7E\x13\x8B\x41\x08", 8},
-        {0x0057C73D, "\xE8\x7E\x76\x0B\x00", 5},
+        {kEncounterPeekCall, "\xE8\x7E\x76\x0B\x00", 5},
+        // EBP is HUD this, [ESP+14h] is the output. Include both the
+        // continuation instructions and the following output load/test.
+        {kEncounterPeekReturn, "\x8B\x55\x18\x0B\x55\x1C\x0F\x84\x94\x02\x00\x00\x8B\x44\x24\x14\x85\xC0", 18},
         {kEncounterMenuUpdate, "\x51\x56\x8B\xF1\x8A\x46\x4C", 7},
         {0x0058CE39, "\x8B\x11\x55\xFF\x52\x04", 6},
         {0x0057BD09, "\x5F\x5E\x59\xC2\x04\x00", 6},
@@ -434,8 +443,11 @@ bool ValidateEncounterSurface() noexcept {
         {0x00568030, "\x56\x8B\xF1\x8B\x46\x14\x57", 7},
         {0x00568145, "\xC2\x18\x00", 3},
     };
-    for (const auto& guard : guards)
-        if (std::memcmp(reinterpret_cast<void*>(Address(guard.address)), guard.bytes, guard.size)) return false;
+    for (const auto& guard : guards) {
+        if (!std::memcmp(reinterpret_cast<void*>(Address(guard.address)), guard.bytes, guard.size)) continue;
+        Log(LogLevel::Warning, "ENCOUNTER_SIGNAL_SURFACE rejected address=%08X", unsigned(guard.address));
+        return false;
+    }
     return *reinterpret_cast<std::uintptr_t*>(Address(kEncounterMenuVtable + 4)) == Address(kEncounterMenuUpdate);
 }
 
@@ -445,9 +457,9 @@ void InstallEncounterSignalHooks() noexcept {
         Log(LogLevel::Warning, "ENCOUNTER exact surface rejected; stable free roam retained");
         return;
     }
-    const std::uintptr_t addresses[] = {kEncounterHudJoy, kEncounterQueuePeek, kEncounterMenuUpdate};
-    void* replacements[] = {reinterpret_cast<void*>(&EncounterJoyHook), reinterpret_cast<void*>(&EncounterPeekHook), reinterpret_cast<void*>(&EncounterMenuHook)};
-    void** originals[] = {reinterpret_cast<void**>(&g_encounterOriginalJoy), reinterpret_cast<void**>(&g_encounterOriginalPeek), reinterpret_cast<void**>(&g_encounterOriginalMenu)};
+    const std::uintptr_t addresses[] = {kEncounterHudJoy, kEncounterPeekReturn, kEncounterMenuUpdate};
+    void* replacements[] = {reinterpret_cast<void*>(&EncounterJoyHook), reinterpret_cast<void*>(&EncounterPeekReturnHook), reinterpret_cast<void*>(&EncounterMenuHook)};
+    void** originals[] = {reinterpret_cast<void**>(&g_encounterOriginalJoy), &g_encounterPeekContinuation, reinterpret_cast<void**>(&g_encounterOriginalMenu)};
     bool success = true;
     for (unsigned i = 0; i < 3 && success; ++i)
         success = MH_CreateHook(reinterpret_cast<void*>(Address(addresses[i])), replacements[i], originals[i]) == MH_OK;
@@ -461,6 +473,6 @@ void InstallEncounterSignalHooks() noexcept {
         }
     }
     g_encounterEnabled = success;
-    Log(LogLevel::Info, "ENCOUNTER installed=%u phase=battle-prototype distance=1-60m lateralMax=20m heightMax=slope-scaled-5-12m headingDotMin=0.25 speedMin=none deltaMax=configured hardSpeedGrace=0 dwell=0.15s followGraceMs=2000 hardRangeGrace=0 cooldown=8s mappedAction=46 physicalKeyPolling=0 nativeEventWrites=0",
+    Log(LogLevel::Info, "ENCOUNTER installed=%u input=HUD-post-peek sharedPeekUntouched=1 phase=battle-prototype distance=1-60m lateralMax=20m heightMax=slope-scaled-5-12m headingDotMin=0.25 speedMin=none deltaMax=configured hardSpeedGrace=0 dwell=0.15s followGraceMs=2000 hardRangeGrace=0 cooldown=8s mappedAction=46 physicalKeyPolling=0 nativeEventWrites=0",
         unsigned(success));
 }

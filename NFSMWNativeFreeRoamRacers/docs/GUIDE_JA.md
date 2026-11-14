@@ -1,8 +1,8 @@
-# MW Native Free Roam Racer — v0.1.3
+# MW Native Free Roam Racer — v0.1.4
 
 Need for Speed Most Wanted (2005) のロックポートに、自由走行するAIレーサーと一対一のエンカウンターバトルを追加します。
 
-本体はNFRRです。**NFSMW Limit Breaker（LB）0.1.3-resource-headroom.5を任意の付属MODとして同梱し、基本的には併用を推奨します。LBを外してもNFRRは動作します。**
+本体はNFRRです。**NFSMW Limit Breaker（LB）0.1.3-resource-headroom.6を任意の付属MODとして同梱し、基本的には併用を推奨します。LBを外してもNFRRは動作します。**
 
 ## LBを併用するメリット
 
@@ -76,7 +76,7 @@ Stableの勝利報酬は1,000固定。Custom AIはバトル開始時のBL順位�
 
 共有モデルの寿命管理と性能参照の検査を追加していますが、不正車両MOD全般を修復するものではありません。直近の公開前実走は安定していた一方、共有参照の実解除はその走行で記録されていないため、CTDの完全解消は断言しません。
 
-報告にはバージョン、EXEハッシュ、関連MODと車種、再現手順、NFRRログ（併用時はLBログも）を添えてください。ログの個人情報を確認してから共有してください。Alpha.59以降の変更は `PATCH_NOTES_v0.1.3.md`、LB詳細は `docs/NFSMWLimitBreaker/` を参照。
+報告にはバージョン、EXEハッシュ、関連MODと車種、再現手順、NFRRログ（併用時はLBログも）を添えてください。ログの個人情報を確認してから共有してください。今回の変更は0.1.4のパッチノート、LB詳細は `docs/NFSMWLimitBreaker/` を参照。
 
 本プロジェクトの独自コードと文書は `LICENSE.md` のMIT Licenseで公開します。第三者のライセンスは維持されます。ゲーム資産・抽出音声に関する権利を付与するものではありません。
 
@@ -86,7 +86,7 @@ Stableの勝利報酬は1,000固定。Custom AIはバトル開始時のBL順位�
 
 通常設定は`NFSMWNativeFreeRoamRacers.ini`、エディタ専用の代替設定は`NFSMWNativeFreeRoamRacers.editor.ini`へ分離しました。有効な通常生成設定を優先します。Event Loader対応は先行対応で、任意・非同梱。通常バトルに必要ありません。
 
-同梱LBは`[VehicleResources] AdditionalSkins=1`、`PartModelSlots=4096`を追加。Unlimiter導入時はそのスキン割当を優先し、設定数は導入資源数に合わせてください。変更前にLB説明書を確認してください。新規LB設定では`[Audio] LBEngineAudioExpansion=0`が既定OFF。従来ONだった設定は保持でき、6枠利用には両MODの設定と能力・実割当検査が必要です。他MODのINIを自動置換しないでください。
+同梱LBは`[VehicleResources] AdditionalSkins=1`、`PartModelSlots=8192`を追加。Unlimiter導入時はそのスキン割当を優先し、設定数は導入資源数に合わせてください。変更前にLB説明書を確認してください。新規LB設定では`[Audio] LBEngineAudioExpansion=0`が既定OFF。従来ONだった設定は保持でき、6枠利用には両MODの設定と能力・実割当検査が必要です。他MODのINIを自動置換しないでください。
 
 詳細ログは`[Diagnostics] Logging=0`で既定OFF。正確な1を指定し再起動した時のみON、省略・不正値はOFF。OFF時は診断テレメトリ・フレーム計測を省略し、機能上の車種キャッシュは継続します。普段使い・配布設定には一時ONを残さないでください。
 
@@ -98,3 +98,7 @@ NFSPatcher EN1.3 (6029312 bytes): 80774C2E5D619B4F120B48D4462896FD504C263399D203
 NFSPatcher EN1.3 LAA (6029312 bytes): B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06
 Redux 3.04 LAA (5926912 bytes): 0C5675A08CD71FD6D31CA87E992A915054BD8B80D268BFF0561D7ECC2067E342
 ```
+
+## 0.1.3から0.1.4への更新
+
+ゲームを終了し、新しいZIPのNFRRのASIと、使用中の場合はLimit BreakerのASIを差し替えてください。設定とセーブを保持し、必要に応じてLBの車両ストリーミング設定を比較してから再起動してください。W2C to MW RC4 Previewは任意の別配布MODです。

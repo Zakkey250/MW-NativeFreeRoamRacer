@@ -13,6 +13,14 @@
 #include "../src/SkinResources.h"
 #include "../src/SkinSlotOwnership.h"
 #include "../src/CarPartPolicy.h"
+#include "../src/CarStreamingPolicy.h"
+static_assert(car_streaming_capacity::SelectMiB(160)==160);
+static_assert(car_streaming_capacity::SelectMiB(192)==192);
+static_assert(car_streaming_capacity::SelectMiB(224)==224);
+static_assert(car_streaming_capacity::SelectMiB(256)==256);
+static_assert(car_streaming_capacity::SelectMiB(257)==160);
+static_assert(car_streaming_capacity::SelectMiB(0)==160);
+static_assert(car_streaming_capacity::Units(192)-car_streaming_capacity::Units(160)==32768);
 #include "../../integration/AppearanceSafety.h"
 
 namespace {

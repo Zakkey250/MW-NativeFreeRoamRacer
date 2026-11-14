@@ -171,8 +171,8 @@ bool ReadEncounterAI(const battle::Identity& identity,EncounterNativeAI& out,boo
     return ReadEncounterAIStructure(identity,out,failure)&&out.navValid&&(!actionRequired||out.raceAction);
 }
 
-#include "W2CRaceAssist.inl"
 #include "EventNeoBridge.inl"
+#include "W2CRaceAssist.inl"
 #include "EncounterRaceSkill.inl"
 #include "EncounterPowerBoost.inl"
 #include "EncounterMinimap.inl"

@@ -1,9 +1,9 @@
 param(
-    [string]$GameExe='C:\Program Files (x86)\EA GAMES\Need for Speed Most Wanted Main\speed.exe'
+    [string]$GameExe=$(Join-Path $(if($env:NFS_GAME_ROOT){$env:NFS_GAME_ROOT}elseif($env:COMPUTERNAME -eq 'ZAKKEY'){'E:\EA GAMES'}else{'\\ZAKKEY\EA GAMES'}) 'Need for Speed Most Wanted Main\speed.exe')
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
-$version='v0.1.1'
+$version='v0.1.3-resource-headroom.6'
 & (Join-Path $PSScriptRoot 'Build.ps1') -GameExe $GameExe
 
 $dist=Join-Path $root 'dist'
@@ -42,17 +42,14 @@ Copy-Item -LiteralPath (Join-Path $root 'docs\Resource-Limits-V1.md') -Destinati
 $releaseAsi=Join-Path $stage 'scripts\NFSMWLimitBreaker.asi'
 $releaseIni=Join-Path $stage 'scripts\NFSMWLimitBreaker.ini'
 $iniText=Get-Content -LiteralPath $releaseIni -Raw
-if($iniText -match '(?i)CarLoader|VehicleResources'){
-    throw 'Release INI still contains rejected CarLoader configuration.'
+if($iniText -notmatch '(?m)^RpdStreamingPoolMiB\s*=\s*256\s*$' -or
+   $iniText -notmatch '(?m)^Logging\s*=\s*0\s*$'){
+    throw 'Release INI is missing the streaming and logging defaults.'
 }
 $asiBytes=[IO.File]::ReadAllBytes($releaseAsi)
-$asiAscii=[Text.Encoding]::ASCII.GetString($asiBytes)
 $asiUnicode=[Text.Encoding]::Unicode.GetString($asiBytes)
-if($asiAscii -match '(?i)CarLoader' -or $asiUnicode -match '(?i)CarLoader'){
-    throw 'Release ASI still contains rejected CarLoader implementation.'
-}
-if($asiUnicode -notmatch '0\.1\.1'){
-    throw 'Release ASI does not contain the v0.1.1 version string.'
+if(!$asiUnicode.Contains($version.Substring(1))){
+    throw 'Release ASI does not contain the expected version string.'
 }
 
 $manifestLines=Get-ChildItem -LiteralPath $stage -Recurse -File |
@@ -85,13 +82,17 @@ $overlayManifestLines=Get-ChildItem -LiteralPath $nfrOverlay -Recurse -File |
     }
 [IO.File]::WriteAllLines((Join-Path $nfrOverlay 'MANIFEST-SHA256.txt'),
     $overlayManifestLines,[Text.UTF8Encoding]::new($false))
-Copy-Item -LiteralPath (Join-Path $root 'NFSMWLimitBreaker.vcxproj') -Destination $sourceStage
-Copy-Item -LiteralPath (Join-Path $root 'NFSMWLimitBreaker.ini') -Destination $sourceStage
-Copy-Item -LiteralPath (Join-Path $root 'src') -Destination $sourceStage -Recurse
-Copy-Item -LiteralPath (Join-Path $root 'tests') -Destination $sourceStage -Recurse
-Copy-Item -LiteralPath (Join-Path $root 'tools') -Destination $sourceStage -Recurse
-Copy-Item -LiteralPath (Join-Path $root 'docs') -Destination $sourceStage -Recurse
-Copy-Item -LiteralPath (Join-Path $root 'third_party') -Destination $sourceStage -Recurse
+$sourceModule=Join-Path $sourceStage 'NFSMWLimitBreaker'
+New-Item -ItemType Directory -Path $sourceModule -Force | Out-Null
+foreach($name in 'NFSMWLimitBreaker.vcxproj','NFSMWLimitBreaker.ini','src','tests','tools','docs','third_party','README_EN.md','README_JA.md','RELEASE_NOTES.md','LICENSE.md'){
+    Copy-Item -LiteralPath (Join-Path $root $name) -Destination $sourceModule -Recurse
+}
+$workspace=Split-Path -Parent $root
+foreach($name in 'NFSMWNativeFreeRoamRacers/include/ExecutableTargets.h','integration/AppearanceSafety.h'){
+    $destination=Join-Path $sourceStage $name
+    New-Item -ItemType Directory -Path (Split-Path $destination) -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $workspace $name) -Destination $destination
+}
 
 $binaryZip=Join-Path $dist "NFSMWLimitBreaker-$version.zip"
 $sourceZip=Join-Path $dist "NFSMWLimitBreaker-$version-source.zip"

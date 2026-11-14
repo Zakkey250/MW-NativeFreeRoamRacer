@@ -1,5 +1,6 @@
-param([switch]$CustomChaseOnly)
+param([switch]$CustomChaseOnly,[switch]$EncounterInputOnly)
 $ErrorActionPreference = 'Stop'
+if($CustomChaseOnly -and $EncounterInputOnly){throw 'Choose one focused test suite'}
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $install = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath
@@ -12,6 +13,7 @@ try {
     # This linker option applies only to the test executable, never the ASI/game.
     $command = '"' + $devcmd + '" -no_logo -arch=x86 -host_arch=x64 && cl /nologo /std:c++20 /EHsc /O2 /MD /DWIN32_LEAN_AND_MEAN /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /Iinclude /Ithird_party\minhook\include /Ithird_party\NFSPluginSDK tools\CacheOwnershipTests.cpp artifacts\obj\Release\Logging.obj artifacts\obj\Release\buffer.obj artifacts\obj\Release\hook.obj artifacts\obj\Release\trampoline.obj artifacts\obj\Release\hde32.obj /Foartifacts\Tests\CacheOwnershipTests.obj /Feartifacts\Tests\CacheOwnershipTests.exe /link /LTCG /LARGEADDRESSAWARE /STACK:16777216 /SUBSYSTEM:CONSOLE Advapi32.lib'
     if($CustomChaseOnly){$command=$command.Replace('/DWIN32_LEAN_AND_MEAN','/DNFRR_CUSTOM_CHASE_TESTS_ONLY /DWIN32_LEAN_AND_MEAN')}
+    if($EncounterInputOnly){$command=$command.Replace('/DWIN32_LEAN_AND_MEAN','/DNFRR_ENCOUNTER_INPUT_TESTS_ONLY /DWIN32_LEAN_AND_MEAN')}
     & cmd /d /c $command
     if ($LASTEXITCODE -ne 0) { throw 'Offline test build failed; build Release Win32 first' }
     & '.\artifacts\Tests\CacheOwnershipTests.exe'

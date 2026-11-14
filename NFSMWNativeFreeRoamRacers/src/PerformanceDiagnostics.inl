@@ -70,7 +70,6 @@ void ReportPerformanceWindow(ULONGLONG now) noexcept {
     if(now-g_performanceWindowStart<30000000)return;
     const auto window=now-g_performanceWindowStart;
     // At most 19 rows per 30 seconds. Stage rows are nested: do not sum them.
-    const LogBatch batch;
     for(unsigned i=0;i<static_cast<unsigned>(PerfStage::Count);++i) {
         const auto& h=g_performance[i];
         if(!h.count)continue;

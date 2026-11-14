@@ -46,12 +46,14 @@
         expect(!EncounterActionIsEngage({45,0,1}) && !EncounterActionIsEngage({47,0,1}),
             "encounter pause and pad-left actions do not signal");
         std::array<std::uint8_t,0x400> hud{};
-        expect(IsEncounterPeekContext(Address(kEncounterPeekReturn),hud.data()+0x30,hud.data()),
-            "encounter observes only converted HUD queue at verified callsite");
-        expect(!IsEncounterPeekContext(Address(kEncounterPeekReturn)+1,hud.data()+0x30,hud.data()) &&
-            !IsEncounterPeekContext(Address(kEncounterPeekReturn),hud.data()+0x40,hud.data()) &&
-            !IsEncounterPeekContext(Address(kEncounterPeekReturn),hud.data()+0x30,nullptr),
-            "encounter other queue/caller/no context excluded");
+        EncounterAction remaining{46,3,1}, observed{};
+        g_encounterJoyContext=hud.data();
+        expect(ReadEncounterPeekAction(hud.data(),&remaining,observed) && observed.id==46,
+            "encounter sees the unconsumed HUD action");
+        expect(!ReadEncounterPeekAction(hud.data(),nullptr,observed) &&
+            !ReadEncounterPeekAction(hud.data()+4,&remaining,observed),
+            "encounter excludes facility-consumed action and unrelated HUD");
+        g_encounterJoyContext=nullptr;
         std::array<std::uint8_t,0x60> widget{};
         put(widget,0,Address(kEncounterMenuVtable));
         expect(EncounterWidgetFree(widget.data()), "encounter empty native widget can be borrowed");
@@ -132,29 +134,48 @@
         g_racers.clear();updateCandidate(player,challengeVehicles,0.05f);
         expect(!g_encounterCandidate.rival,"encounter unmanaged racer cannot arm");
         ResetEncounterSignal();g_encounterEnabled=false;
-        // Exact native-shaped peek prologue/RET4 tested with a real MinHook trampoline.
+        // A caller shaped like native HUD Joy: its Peek target can be either
+        // the stock RET4 function or a provider that consumes the action.
+        const std::uint8_t callerStub[]={0x55,0x8B,0xE9,0x83,0xEC,0x18,
+            0x8D,0x44,0x24,0x14,0x50,0x8D,0x4D,0x30,0xE8,0,0,0,0,
+            0x8B,0x55,0x18,0x0B,0x55,0x1C,0x8B,0x44,0x24,0x14,0x83,0xC4,0x18,0x5D,0xC3};
         const std::uint8_t peekStub[]={0x83,0x39,0,0x7E,0x13,0x8B,0x41,8,
             0x8D,4,0x40,0x8D,0x4C,0x81,0x10,0x8B,0x44,0x24,4,0x89,8,0xC2,4,0,
             0x8B,0x44,0x24,4,0xC7,0,0,0,0,0,0xC2,4,0};
-        auto* code=VirtualAlloc(nullptr,4096,MEM_RESERVE|MEM_COMMIT,PAGE_EXECUTE_READWRITE);
+        constexpr auto continuationOffset=19;
+        constexpr auto nativePeekOffset=128;
+        auto* code=static_cast<std::uint8_t*>(VirtualAlloc(nullptr,4096,MEM_RESERVE|MEM_COMMIT,PAGE_EXECUTE_READWRITE));
         bool installed=false;
         if(code) {
-            std::memcpy(code,peekStub,sizeof(peekStub));FlushInstructionCache(GetCurrentProcess(),code,sizeof(peekStub));
-            if(MH_Initialize()==MH_OK) installed=MH_CreateHook(code,&EncounterPeekHook,
-                reinterpret_cast<void**>(&g_encounterOriginalPeek))==MH_OK && MH_EnableHook(code)==MH_OK;
+            std::memcpy(code,callerStub,sizeof(callerStub));
+            const std::int32_t relative=nativePeekOffset-continuationOffset;
+            std::memcpy(code+15,&relative,4);
+            std::memcpy(code+nativePeekOffset,peekStub,sizeof(peekStub));
+            FlushInstructionCache(GetCurrentProcess(),code,4096);
+            if(MH_Initialize()==MH_OK)
+                installed=MH_CreateHook(code+continuationOffset,&EncounterPeekReturnHook,&g_encounterPeekContinuation)==MH_OK &&
+                    MH_EnableHook(code+continuationOffset)==MH_OK;
         }
-        expect(installed,"encounter native peek prologue real trampoline installs");
+        expect(installed,"encounter HUD continuation real trampoline installs");
         if(installed) {
-            std::array<std::uint8_t,64> queue{};
-            put(queue,0,1u);put(queue,8,0u);put(queue,16,EncounterAction{46,3,1});
-            const auto before=queue;void* action=nullptr;
-            void* result=reinterpret_cast<EncounterPeekFn>(code)(queue.data(),&action);
-            expect(action==queue.data()+16 && result==&action && queue==before,
-                "encounter hook preserves native EAX, output pointer and entire input queue");
-            put(queue,0,0u);result=reinterpret_cast<EncounterPeekFn>(code)(queue.data(),&action);
-            expect(!action && result==&action,"encounter empty queue ABI preserved");
+            put(hud,0x30,1u);put(hud,0x38,0u);put(hud,0x40,remaining);
+            const auto before=hud;
+            const auto hudCall=reinterpret_cast<void*(__thiscall*)(void*)>(code);
+            g_encounterJoyContext=hud.data();
+            expect(hudCall(hud.data())==hud.data()+0x40 && hud==before &&
+                !std::memcmp(code+nativePeekOffset,peekStub,sizeof(peekStub)),
+                "encounter preserves HUD output and leaves the shared Peek target untouched");
+            const std::uint8_t consumed[]={0x8B,0x44,0x24,4,0xC7,0,0,0,0,0,0xC2,4,0};
+            std::memcpy(code+nativePeekOffset,consumed,sizeof(consumed));
+            FlushInstructionCache(GetCurrentProcess(),code+nativePeekOffset,sizeof(consumed));
+            expect(hudCall(hud.data())==nullptr && hud==before,
+                "encounter preserves a facility provider's consumed HUD input");
+            g_encounterJoyContext=nullptr;
         }
-        if(code) {MH_DisableHook(code);MH_RemoveHook(code);MH_Uninitialize();VirtualFree(code,0,MEM_RELEASE);}
+        if(code) {
+            MH_DisableHook(code+continuationOffset);MH_RemoveHook(code+continuationOffset);
+            MH_Uninitialize();VirtualFree(code,0,MEM_RELEASE);g_encounterPeekContinuation=nullptr;
+        }
         // Actual Menu Update prologue and RET 4. Record the caller's stack
         // argument at +54 and call count at +58; execute no game UI routines.
         const std::uint8_t menuStub[]={0x51,0x56,0x8B,0xF1,0x8A,0x46,0x4C,

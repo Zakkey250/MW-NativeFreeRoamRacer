@@ -17,6 +17,13 @@ inline float RaiseChaseSpeed(float native,float desired) noexcept {
     if(!std::isfinite(native)||native<=.1f||!std::isfinite(desired)||desired<0||desired>100) return native;
     return std::max(native,desired);
 }
+inline float InterceptorRaceSpeed(float native,float curvature,bool blocked) noexcept {
+    if(blocked||!std::isfinite(curvature))return native;
+    // Use the battle controller's demand path rather than multiplying the
+    // native cruise request. Native stop/reverse and object braking remain.
+    const float corner=std::clamp(std::sqrt(30.f/std::max(.0001f,std::abs(curvature))),12.f,100.f);
+    return RaiseChaseSpeed(native,corner);
+}
 inline float AttackEntrySpeed(float desired,float entry,float seconds) noexcept {
     if(!std::isfinite(desired)||desired<0||desired>100)return desired;
     if(!std::isfinite(entry)||entry<0||!std::isfinite(seconds)||seconds<0)return desired;

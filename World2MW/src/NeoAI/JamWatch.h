@@ -7,7 +7,7 @@ struct JamWatch {
  bool active=false;uint32_t event=0,lap=0,edge=0;float age=0,progress=0,retry=0;
  Point anchor{};
  void Reset(){*this={};}
- bool Update(const Vehicle& v,const Guidance& g,Recovery recovery){
+ bool Update(const Vehicle& v,const Guidance& g,Recovery recovery,bool nativeDriftMotion=false){
   if(!g.status||!Finite(v.position)||!std::isfinite(g.progress)){Reset();return false;}
   if(!std::isfinite(v.dt)||v.dt<=0)return false;
   float dt=std::min(v.dt,.1f);retry=std::max(0.f,retry-dt);
@@ -27,6 +27,16 @@ struct JamWatch {
   bool advance=g.progress>=progress+3&&LengthXZ(Sub(v.position,anchor))>=3&&aligned;
   bool running=g.status==1&&recovery==Recovery::Normal&&v.speed>5&&aligned&&!contact&&
      DotXZ(Sub(v.position,anchor),UnitXZ(g.forward))>=5;
+  // A low-grip launch can move the real chassis before the projected route
+  // station advances. Mere proximity to a moving racer is not a contact jam.
+  // Require actual net forward displacement AND current body velocity; wheel
+  // spin, rocking, a stopped lead, blocked guidance and recovery still fail.
+  // Opt-in only for Event Loader native drift; other JamWatch users retain
+  // their original watchdog contract and deadlines.
+  if(nativeDriftMotion&&g.status==1&&g.confidence>=.8f&&recovery==Recovery::Normal&&aligned&&
+     Finite(v.velocity)&&v.speed>2&&DotXZ(v.velocity,UnitXZ(g.forward))>2&&
+     (!contact||(std::isfinite(g.leadSpeed)&&g.leadSpeed>2))&&
+     DotXZ(Sub(v.position,anchor),UnitXZ(g.forward))>=2)running=true;
   if(!gatePending&&(advance||running)){Reset();return false;}
   age+=dt;return age>=(gatePending?.5f:3.f)&&retry<=0&&(!gatePending||std::abs(v.speed)<5);
  }

@@ -53,7 +53,7 @@ std::uint32_t g_audioAllocatorDescriptor = 0;
 volatile LONG g_resourceCapabilities = 0;
 std::uint32_t g_resourceLogicalLimit = 0;
 
-constexpr wchar_t kVersion[] = L"0.1.3-resource-headroom.5";
+constexpr wchar_t kVersion[] = L"0.1.3-resource-headroom.6";
 constexpr DWORD kVectorInitializationTimeoutMs = 10 * 60 * 1000;
 
 std::wstring ModuleSiblingPath(const wchar_t* name) {
@@ -912,6 +912,7 @@ bool AllocateStorage() {
 #include "SkinCapacity.inl"
 #include "SkinRecolourCache.inl"
 #include "CarPartCapacity.inl"
+#include "CarStreamingCapacity.inl"
 #include "NativeAiDispatchQueue.inl"
 DWORD WINAPI Initialize(LPVOID) {
     wchar_t logging[16]{};
@@ -944,6 +945,8 @@ DWORD WINAPI Initialize(LPVOID) {
         return 0;
     }
     if (!VerifyAllPatchSites()) return 0;
+    if(GetPrivateProfileIntW(L"VehicleResources",L"RpdStreamingHeadroom",1,iniPath.c_str())==1)
+        InstallCarStreamingCapacity(iniPath);
     InstallCarPartCapacity(iniPath);
     if(GetPrivateProfileIntW(L"VehicleResources",L"AdditionalSkins",1,iniPath.c_str())==1)InstallSkinCapacity();
     InstallSkinRecolourCache();

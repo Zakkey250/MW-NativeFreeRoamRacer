@@ -97,6 +97,19 @@ int RunCacheTests() {
         std::printf("%s %s\n", condition ? "PASS" : "FAIL", name);
         if (!condition) ++failures;
     };
+#ifdef NFRR_ENCOUNTER_INPUT_TESTS_ONLY
+    {
+        const auto put=[](auto& buffer,std::size_t offset,auto value) {
+            std::memcpy(buffer.data()+offset,&value,sizeof(value));
+        };
+        const auto setGlobal=[](std::uintptr_t address,const auto& value) {
+            std::memcpy(reinterpret_cast<void*>(Address(address)),&value,sizeof(value));
+        };
+#include "EncounterSignalTests.inl"
+    }
+    VirtualFree(region,0,MEM_RELEASE);
+    return failures ? 1 : 0;
+#endif
 #ifdef NFRR_CUSTOM_CHASE_TESTS_ONLY
     {
         const auto put=[](auto& buffer,std::size_t offset,auto value) {

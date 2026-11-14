@@ -1,5 +1,5 @@
 param(
-    [string]$GameDirectory='C:\Program Files (x86)\EA GAMES\Need for Speed Most Wanted Main'
+    [string]$GameDirectory=$(Join-Path $(if($env:NFS_GAME_ROOT){$env:NFS_GAME_ROOT}elseif($env:COMPUTERNAME -eq 'ZAKKEY'){'E:\EA GAMES'}else{'\\ZAKKEY\EA GAMES'}) 'Need for Speed Most Wanted Main')
 )
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent

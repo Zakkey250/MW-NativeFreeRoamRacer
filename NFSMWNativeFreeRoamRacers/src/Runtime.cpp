@@ -1,4 +1,5 @@
 #include "../../integration/InstalledCarType.h"
+#include "../../integration/RpdHeatTierPolicy.h"
 #include "Runtime.h"
 #include "RuntimeConfig.h"
 #include "../../integration/AppearanceSafety.h"
@@ -840,25 +841,22 @@ bool BeginConstructionProtection(const void* const* vehicles,
                                  const unsigned count) noexcept {
     if (count == 0 || !ReadablePointerArray(vehicles,count))
         return false;
+    // Construct the snapshot before claiming publication. The cache vote
+    // hook never waits behind an allocation or reads of the caller's array.
+    std::vector<std::uintptr_t> snapshot;
+    try {snapshot.resize(count);} catch (...) {return false;}
+    for (unsigned index = 0; index < count; ++index) {
+        const void* vehicle=nullptr;
+        if(!SafeRead(vehicles+index,&vehicle)||!vehicle)return false;
+        snapshot[index]=reinterpret_cast<std::uintptr_t>(vehicle);
+    }
     bool expected = false;
     if (!g_externalConstructionProtectionClaimed.compare_exchange_strong(
             expected, true, std::memory_order_acq_rel,
             std::memory_order_acquire))
         return false;
     AcquireSRWLockExclusive(&g_constructionSetLock);
-    bool prepared=true;
-    try {g_externalConstructionProtectedVehicles.resize(count);} catch (...) {prepared=false;}
-    for (unsigned index = 0; prepared&&index < count; ++index) {
-        const void* vehicle=nullptr;
-        if(!SafeRead(vehicles+index,&vehicle)||!vehicle){prepared=false;break;}
-        g_externalConstructionProtectedVehicles[index]=reinterpret_cast<std::uintptr_t>(vehicle);
-    }
-    if(!prepared){
-        g_externalConstructionProtectedCount.store(0,std::memory_order_release);
-        g_externalConstructionProtectionClaimed.store(false,std::memory_order_release);
-        ReleaseSRWLockExclusive(&g_constructionSetLock);
-        return false;
-    }
+    g_externalConstructionProtectedVehicles.swap(snapshot);
     g_externalConstructionProtectionStartVotes.store(
         g_externalConstructionProtectedVotes.load(std::memory_order_relaxed),
         std::memory_order_relaxed);
@@ -2427,6 +2425,38 @@ std::uint32_t ReadEventCareerPlayerKey() noexcept {
     } __except(EXCEPTION_EXECUTE_HANDLER) {Log(LogLevel::Info,"EVENT_PLAYER_LOOKUP exception=%08X",GetExceptionCode());return 0;}
 }
 
+bool HeatOpponentEligible(std::uint32_t key) noexcept {
+    __try {
+        auto* collection=reinterpret_cast<CatalogCollection*(__cdecl*)(unsigned,unsigned)>(Address(0x455FD0))(CatalogHash("pvehicle"),key);
+        std::uint8_t allowed=0;
+        return collection&&SafeRead(CatalogData(collection,"RandomOpponent"),&allowed)&&allowed==1;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {return false;}
+}
+
+std::uint32_t SelectHeatOpponent(unsigned heat) {
+    if(g_faulted||!g_catalogFinished||g_catalog.empty()||heat<1||heat>10){
+        Log(LogLevel::Info,"RPD_HEAT_OPPONENT_UNAVAILABLE heat=%u catalog_ready=%u",heat,unsigned(g_catalogFinished));return 0;
+    }
+    std::vector<std::size_t> eligible;
+    for(std::size_t i=0;i<g_catalog.size();++i)
+        if(g_catalog[i].installed&&HeatOpponentEligible(g_catalog[i].installed->key))eligible.push_back(i);
+    if(eligible.empty())return 0;
+    const auto band=rpd_heat_tier::Candidates(eligible.size(),heat);
+    static std::uint64_t generation=~std::uint64_t(0);
+    static unsigned lastHeat=0;
+    static std::vector<std::size_t> bag;
+    if(generation!=g_catalogGeneration||lastHeat!=heat){bag.clear();generation=g_catalogGeneration;lastHeat=heat;}
+    const auto first=eligible.begin()+band.begin,last=eligible.begin()+band.end;
+    bag.erase(std::remove_if(bag.begin(),bag.end(),[&](auto i){return std::find(first,last,i)==last;}),bag.end());
+    if(bag.empty()){bag.assign(first,last);std::shuffle(bag.begin(),bag.end(),g_random);}
+    if(bag.empty())return 0;
+    const auto chosen=bag.back();bag.pop_back();
+    const auto* vehicle=g_catalog[chosen].installed;
+    Log(LogLevel::Info,"RPD_HEAT_OPPONENT_SELECTED heat=%u model=%s key=%08X rank=%u eligible=%u window=%u-%u price50Performance50=1 native_random_allowed=1",
+        heat,vehicle->model,vehicle->key,unsigned(std::find(eligible.begin(),eligible.end(),chosen)-eligible.begin()+1),unsigned(eligible.size()),unsigned(band.begin+1),unsigned(band.end));
+    return vehicle->key;
+}
+
 std::uint32_t SelectEventOpponent() {
     if(g_faulted||!g_catalogFinished||g_catalog.empty())return 0;
     std::vector<VehicleSnapshot> vehicles;EnumerateVehicles(vehicles);
@@ -2469,4 +2499,8 @@ extern "C" __declspec(dllexport) void __cdecl NFR_PlayerSpikeHitV2(std::uintptr_
 #pragma comment(linker,"/EXPORT:NFR_SelectEventOpponentV1=_NFR_SelectEventOpponentV1")
 extern "C" __declspec(dllexport) std::uint32_t __cdecl NFR_SelectEventOpponentV1() noexcept {
     try{return native_freeroam::SelectEventOpponent();}catch(...){return 0;}
+}
+#pragma comment(linker,"/EXPORT:NFR_SelectHeatOpponentV1=_NFR_SelectHeatOpponentV1")
+extern "C" __declspec(dllexport) std::uint32_t __cdecl NFR_SelectHeatOpponentV1(unsigned heat) noexcept {
+    try{return native_freeroam::SelectHeatOpponent(heat);}catch(...){return 0;}
 }

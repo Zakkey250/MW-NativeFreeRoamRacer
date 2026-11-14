@@ -6,6 +6,5 @@ void LogTelemetry(const VehicleSnapshot& player,
     g_telemetryTimer += dt;
     if (g_telemetryTimer < g_settings.telemetryIntervalSeconds) return;
     g_telemetryTimer = 0.0f;
-    const LogBatch batch;
     LogTelemetryRows(player, vehicles);
 }

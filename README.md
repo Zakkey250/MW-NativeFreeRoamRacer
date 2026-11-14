@@ -1,4 +1,4 @@
-# MW Native Free Roam Racer — v0.1.3
+# MW Native Free Roam Racer — v0.1.4
 
 Roaming AI racers and Underground 2-style encounter battles for **Need for Speed Most Wanted (2005)**. NFRR is the main mod; the latest **NFSMW Limit Breaker is included as an optional, recommended companion**. NFRR also works without LB, within normal vehicle/audio limits.
 
@@ -6,9 +6,9 @@ Roaming AI racers and Underground 2-style encounter battles for **Need for Speed
 
 ## Download / 説明書
 
-- [v0.1.3 release](https://github.com/Zakkey250/MW-NativeFreeRoamRacer/releases/tag/v0.1.3)
+- [v0.1.4 release](https://github.com/Zakkey250/MW-NativeFreeRoamRacer/releases/tag/v0.1.4)
 - [English guide](NFSMWNativeFreeRoamRacers/docs/GUIDE_EN.md) / [日本語説明書](NFSMWNativeFreeRoamRacers/docs/GUIDE_JA.md)
-- [Changes since 0.1.1 / パッチノート](PATCH_NOTES_v0.1.3.md)
+- [Changes since 0.1.3 / パッチノート](PATCH_NOTES_v0.1.4.md)
 - [Validation / 検証範囲](VALIDATION.md) / [Build / ビルド](BUILD.md)
 - [LB companion source and guide](NFSMWLimitBreaker/README_EN.md) / [LB日本語](NFSMWLimitBreaker/README_JA.md)
 - [Optional voice extractor / 音声抽出器](NFSU2EncounterAudioExtractor/README.md)
@@ -16,8 +16,8 @@ Roaming AI racers and Underground 2-style encounter battles for **Need for Speed
 
 ## Features / 機能
 
-- **New in 0.1.3: optional win-streak wager battles for Custom AI.** Each win adds 5% of the base reward to the next stake; losing costs that same amount. Enable `[Encounter] WinStreakWager = 1` (default OFF). Safehouse/shop/event transitions reset the streak.
-- **0.1.3新機能：Custom AI専用の連勝ボーナス付き賭けバトル。** 1勝ごとに基本報酬の5%を次の掛け金へ加算。敗北で同額を失います。`WinStreakWager = 1`で有効化（既定OFF）。セーフハウス・ショップ・通常イベントへの移行でリセット。
+- **Optional win-streak wager battles for Custom AI.** Each win adds 5% of the base reward to the next stake; losing costs that same amount. Enable `[Encounter] WinStreakWager = 1` (default OFF). Safehouse/shop/event transitions reset the streak.
+- **Custom AI専用の連勝ボーナス付き賭けバトル。** 1勝ごとに基本報酬の5%を次の掛け金へ加算。敗北で同額を失います。`WinStreakWager = 1`で有効化（既定OFF）。セーフハウス・ショップ・通常イベントへの移行でリセット。
 - Independent racers: default 6, configurable 1–15; management radius 600 m, markers 200 m.
 - Price/performance-based car selection, career-aware tuning, random appearance and persistent catalog calibration.
 - Use the configured Join Event action while following a rival. The leader chooses the route; a 300 m gap decides the result.
@@ -25,7 +25,7 @@ Roaming AI racers and Underground 2-style encounter battles for **Need for Speed
 - Battle HUD, GPS assistance, background police activity, optional 2D UG2 voices and notification-only update checking.
 - Recommended LB expands the total vehicle budget to 32, allowing more ordinary traffic alongside racers and police for more technical races. Actual density is conditional, not guaranteed.
 - Optional LB audio support requests six engine slots and enables six model types only after verified allocation; otherwise normal limits apply. Integration uses API capabilities, not a fixed LB version.
-- Updated LB adds optional native skin resources and a 4,096-slot car-part model pool. Fresh LB audio expansion defaults OFF; enabling six-slot audio requires both mods' options and successful capability checks.
+- LB adds optional native skin resources and defaults to an 8,192-slot car-part model pool on a fresh install. LB audio expansion defaults OFF; enabling six-slot audio requires both mods' options and successful capability checks.
 
 既定6台（1～15台設定可）、管理600m・マーカー200m。価格・性能に応じた車種選択、キャリア準拠の性能チューン、外見抽選とキャリブレーションを搭載。追走中に「イベント参加」で挑戦し、300m差で決着します。Custom AIとStableを選択可能。LB併用時は最大32台の共用枠で一般交通・警察を残しやすくなり、よりテクニカルなレースになります。LB能力・実割り当て確認時のみ音声と車種を拡張し、利用できない場合は通常制限へ戻ります。
 
@@ -57,8 +57,10 @@ Original code and documentation by Zakkey250 are licensed under the [MIT License
 
 Zakkey250が制作したコードと文書は[MIT License](LICENSE.md)で公開します。第三者コンポーネントには、それぞれのライセンスが引き続き適用されます。ゲーム資産・抽出音声・その他の第三者素材に関する権利を付与するものではありません。
 
-## 0.1.3 Hotfix
+## 0.1.4 — W2C to MW RC4
 
-Custom AI chase-coordinate correction, current Event Loader integration and add-on vehicle recognition, with the updated optional LB companion. See [English / 日本語 patch notes](PATCH_NOTES_v0.1.3.md) and [validation](VALIDATION.md).
+Encounter Battles can now start with W2C to MW RC4 Preview. NFRR respects the Join Event input if a safehouse or shop has already handled it. The release also updates W2C/RPD AI integration and includes Limit Breaker 0.1.3-resource-headroom.6. See the [English / 日本語 patch notes](PATCH_NOTES_v0.1.4.md) and [validation](VALIDATION.md).
+
+W2C to MW RC4 Previewとの併用時に、エンカウンターバトルを開始できない不具合を修正しました。セーフハウスやショップが処理した決定入力は、そのまま施設側に任せます。W2C/RPDのAI連携と、同梱のLimit Breakerも更新しました。
 
 対応EXEはNFSPatcher EN1.3通常版・LAA版、および識別済みRedux 3.04版です。実ハッシュ一覧は `NFSMWNativeFreeRoamRacers/include/ExecutableTargets.h`。すべてのMOD構成を保証するものではありません。

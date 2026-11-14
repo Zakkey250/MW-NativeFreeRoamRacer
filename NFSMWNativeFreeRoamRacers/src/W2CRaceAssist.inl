@@ -1,4 +1,5 @@
 #include "../include/RaceGuidanceTarget.h"
+#include "../../integration/RpdAIContract.h"
 #include <NFSPluginSDK/Game.MW05/Types/WRoadNav.h>
 static_assert(offsetof(NFSPluginSDK::MW05::WRoadNav,fPosition)==0x98);
 static_assert(offsetof(NFSPluginSDK::MW05::WRoadNav,fForwardVector)==0xBC);
@@ -13,6 +14,7 @@ unsigned W2CRaceHandle(const VehicleSnapshot& racer) noexcept {
  auto* simable=static_cast<unsigned char*>(GetSimablePointer(racer.pointer));unsigned handle=0;
  return simable&&BattleVtable(simable,kISimableVtable)&&AudioRead(simable+8,&handle)?handle:0;
 }
+unsigned RpdCustomScope(unsigned handle) noexcept;
 bool W2CRaceVehicle(void* ai,VehicleSnapshot& racer,VehicleSnapshot& player,bool localHuman=false,bool requireRaceAction=true,unsigned* failure=nullptr) noexcept {
  auto fail=[&](unsigned reason){if(failure)*failure=reason;return false;};if(failure)*failure=0;
  using Active=unsigned(__cdecl*)();
@@ -33,9 +35,13 @@ bool W2CRaceVehicle(void* ai,VehicleSnapshot& racer,VehicleSnapshot& player,bool
     !AudioRead(static_cast<unsigned char*>(goal)+4,&action)||!BattleVtable(action,kAIActionRaceVtable)))return fail(4);
  unsigned char* status=nullptr;unsigned count=0,play=0,context=0;unsigned char running=0,go=0;
  if(!AudioRead(reinterpret_cast<void*>(Address(0x91E000)),&status)||!status||!AudioRead(status+0x1958,&count)||count>16||
-    !AudioRead(status+0x1960,&play)||play!=1||!AudioRead(status+0x1964,&context)||(context!=2&&!(localHuman&&context==0))||
+    !AudioRead(status+0x1960,&play)||play!=1||!AudioRead(status+0x1964,&context)||(context!=2&&context!=0)||
     !AudioRead(status+0x198A,&running)||!running||!AudioRead(status+0x1978,&go)||!go)return fail(5);
- const unsigned handle=W2CRaceHandle(racer);if(!handle)return fail(6);bool member=false;
+ const unsigned handle=W2CRaceHandle(racer);if(!handle)return fail(6);
+ // An active RPD sprint can use the neutral native race context. Require the
+ // Event Loader to confirm this exact live suspect before allowing NeoAI in it.
+ if(context==0&&!localHuman&&RpdCustomScope(handle)!=rpd_ai_contract::NeoSprint)return fail(5);
+ bool member=false;
  for(unsigned i=0;i<count;++i){unsigned key=0,dead=0;unsigned char finished=0;
   if(!AudioRead(status+0x18+i*0x194,&key)||key!=handle)continue;
   if(!AudioRead(status+0x18+i*0x194+0x1C,&dead)||dead)return fail(7);
@@ -64,13 +70,23 @@ extern "C" __declspec(dllexport) unsigned __cdecl NFRR_MirrorRaceJunkmanV1(void*
      W2CRaceHandle(racer),playerCount?*playerCount:0,aiCount?*aiCount:0);
  return applied?1u:0u;
 }
-bool W2COrderedRouteHint(const VehicleSnapshot& racer,Vec3& aim) noexcept {
+unsigned RpdCustomScope(unsigned handle=0) noexcept {
+ const auto module=GetModuleHandleW(L"MWEventLoader.asi");
+ const auto scope=module?reinterpret_cast<rpd_ai_contract::Scope>(GetProcAddress(module,"MWEL_RpdAIScopeV1")):nullptr;
+ return scope?scope(handle):0;
+}
+bool W2COrderedRouteHint(const VehicleSnapshot& racer,Vec3& aim,bool* corridorHold=nullptr) noexcept {
+ if(corridorHold)*corridorHold=false;
  using Target=unsigned(__cdecl*)(unsigned,const float*,const float*,float,float*);
- const auto module=GetModuleHandleW(L"World2MWNativeLoader.asi");
- const auto get=module?reinterpret_cast<Target>(GetProcAddress(module,"W2MW_RaceCustomTargetV1")):nullptr;
+ const auto handle=W2CRaceHandle(racer);
+ const bool rpd=RpdCustomScope(handle)==rpd_ai_contract::CustomFreeRun;
+ const auto module=GetModuleHandleW(rpd?L"MWEventLoader.asi":L"World2MWNativeLoader.asi");
+ const auto get=module?reinterpret_cast<Target>(GetProcAddress(module,rpd?"MWEL_RpdCustomTargetV1":"W2MW_RaceCustomTargetV1")):nullptr;
  const auto position=W2CWorldPoint(racer.position),heading=W2CWorldPoint(racer.heading);
  const float p[]={position.x,position.y,position.z},h[]={heading.x,heading.y,heading.z};float out[3]{};
- const unsigned handle=W2CRaceHandle(racer);if(!get||!handle||!get(handle,p,h,racer.speed,out))return false;
+ if(!get||!handle)return false;
+ const unsigned result=get(handle,p,h,racer.speed,out);if(!result)return false;
+ if(corridorHold&&rpd)*corridorHold=result==rpd_ai_contract::TargetHold;
  aim=W2CSdkPoint(out);return true;
 }
 // One decision drives InitPath suppression and final aim. Occlusion is
@@ -78,7 +94,7 @@ bool W2COrderedRouteHint(const VehicleSnapshot& racer,Vec3& aim) noexcept {
 extern bool g_customDriveInstalled,g_encounterPathInstalled;
 struct W2CDirectCommand {
  void* ai=nullptr;void* vehicle=nullptr;void* race=nullptr;unsigned handle=0;
- ULONGLONG at=0,nextLog=0;bool active=false,valid=false;unsigned source=0,blocked=0;
+ ULONGLONG at=0,nextLog=0;bool active=false,valid=false,corridorHold=false;unsigned source=0,blocked=0;
  Vec3 aim{},position{},heading{},nativeAim{};ULONGLONG brakeLogAt=0;float lastSpeedRequest=-1;
  unsigned curveSource=0,aimFailures=0;float issuedCurvature=0;
 };
@@ -96,14 +112,21 @@ bool W2CReleaseNativeQuery(void* ai) noexcept {
 }
 W2CDirectCommand* W2CCommand(void* ai,ULONGLONG now) noexcept {
  using Mode=unsigned(__cdecl*)();auto module=GetModuleHandleW(L"World2MWNativeLoader.asi");auto mode=module?reinterpret_cast<Mode>(GetProcAddress(module,"W2MW_RaceControllerV1")):nullptr;
- if(mode&&mode()!=1)return nullptr;
- VehicleSnapshot racer{},player{};
+ const bool rpd=RpdCustomScope()==rpd_ai_contract::CustomFreeRun;
+ if(rpd&&!BattleVtable(ai,kRacecarIVehicleAIVtable))return nullptr;
+ if(!rpd&&mode&&mode()!=1)return nullptr;
+ VehicleSnapshot racer{},player{};unsigned failure=0;
  if(!g_battleSurface||!g_customDriveInstalled||!g_encounterPathInstalled||
-    !W2CRaceVehicle(ai,racer,player)){
+    // RPD's verified suspect scope also admits the native context-0 direct
+    // fixture when its officer is manually controlled. It never admits the
+    // officer: the racer vtable and exact suspect handle are checked here.
+    !W2CRaceVehicle(ai,racer,player,rpd,true,&failure)){
+  if(rpd){static ULONGLONG next=0;if(now>=next){next=now+1000;Log(LogLevel::Info,"RPD_CUSTOM_AI_DEFERRED scope_failure=%u ai=%p",failure,ai);}}
   for(auto& row:g_w2cCommands)if(row.ai==ai){row.active=false;row.valid=false;row.at=0;}
   return nullptr;
  }
  unsigned handle=W2CRaceHandle(racer);void* race=nullptr;
+ if(rpd&&RpdCustomScope(handle)!=rpd_ai_contract::CustomFreeRun)return nullptr;
  if(!AudioRead(reinterpret_cast<void*>(Address(0x91E000)),&race))return nullptr;
  W2CDirectCommand* selected=nullptr;
  for(auto& candidate:g_w2cCommands)if(candidate.ai==ai){selected=&candidate;break;}
@@ -117,7 +140,7 @@ W2CDirectCommand* W2CCommand(void* ai,ULONGLONG now) noexcept {
  const float dx=position.x-row.position.x,dy=position.y-row.position.y,dz=position.z-row.position.z;
  if(row.at&&now>=row.at&&now-row.at<25&&dx*dx+dy*dy+dz*dz<6400)return row.valid?&row:nullptr;
  row.at=now;row.position=position;row.heading=W2CWorldPoint(racer.heading);row.valid=false;
- Vec3 aim{};row.source=W2COrderedRouteHint(racer,aim)?1:0;if(!row.source)++row.aimFailures;
+ Vec3 aim{};row.source=W2COrderedRouteHint(racer,aim,&row.corridorHold)?1:0;if(!row.source)++row.aimFailures;
  if(row.source&&std::isfinite(aim.x)&&std::isfinite(aim.y)&&std::isfinite(aim.z)){
   row.aim=aim;row.valid=row.active||W2CReleaseNativeQuery(ai);
  }
@@ -127,7 +150,8 @@ W2CDirectCommand* W2CCommand(void* ai,ULONGLONG now) noexcept {
  row.active=row.valid;
  if(!row.valid)return nullptr;
  if(now>=row.nextLog){row.nextLog=now+5000;
-  Log(LogLevel::Info,"W2C_CUSTOM_YELLOW handle=%u road_blocked=%u original_custom_trail=1 next_CP_order=1 custom_pace=0 player_trail=0 forced_recovery=0",handle,row.blocked);}
+  if(rpd)Log(LogLevel::Info,"RPD_CUSTOM_AI handle=%u road_blocked=%u connected_blue_road=1 native_steering=1 native_braking=1 speed_override=0 pose_writes=0",handle,row.blocked);
+  else Log(LogLevel::Info,"W2C_CUSTOM_YELLOW handle=%u road_blocked=%u original_custom_trail=1 next_CP_order=1 custom_pace=0 player_trail=0 forced_recovery=0",handle,row.blocked);}
  return &row;
 }
 bool W2CDirectDriveHint(void* ai,ULONGLONG now,Vec3& aim) noexcept {
@@ -168,6 +192,7 @@ void W2CTraceSpeed(void* ai,std::uintptr_t caller,float native,float applied,ULO
 
 using W2CCurvatureFn=float(__thiscall*)(void*,const NFSPluginSDK::MW05::UMath::Vector3*,const NFSPluginSDK::MW05::UMath::Vector3*);
 W2CCurvatureFn g_originalW2CCurvature=nullptr;
+bool g_w2cCurvatureInstalled=false;
 float __fastcall W2CCurvatureHook(void* nav,void*,const NFSPluginSDK::MW05::UMath::Vector3* position,const NFSPluginSDK::MW05::UMath::Vector3* heading){
  const auto caller=reinterpret_cast<std::uintptr_t>(_ReturnAddress());
  if(caller!=Address(0x00428C6C)||!nav)return g_originalW2CCurvature(nav,position,heading);
@@ -208,5 +233,10 @@ void InstallW2CCurvatureHook() noexcept {
  if(ok&&MH_CreateHook(address,W2CCurvatureHook,reinterpret_cast<void**>(&g_originalW2CCurvature))==MH_OK){
   ok=MH_EnableHook(address)==MH_OK;if(!ok)MH_RemoveHook(address);
  }else ok=false;
+ g_w2cCurvatureInstalled=ok;
  Log(ok?LogLevel::Info:LogLevel::Warning,"W2C_ROUTE_CURVATURE hook=%u callerScoped=00428C6C native_vehicle_speed_model=1 avoidable_preserved=1 ordered_target_before_speed=1",unsigned(ok));
+}
+#pragma comment(linker,"/EXPORT:NFRR_RpdCustomAIReadyV1=_NFRR_RpdCustomAIReadyV1")
+extern "C" __declspec(dllexport) unsigned __cdecl NFRR_RpdCustomAIReadyV1(unsigned version){
+ return version==rpd_ai_contract::Version&&g_battleSurface&&g_customDriveInstalled&&g_encounterPathInstalled&&g_w2cCurvatureInstalled?1u:0u;
 }

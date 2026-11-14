@@ -1,4 +1,4 @@
-# Diagnostic logging coverage for NFRR 0.1.3
+# Diagnostic logging coverage for NFRR 0.1.4
 
 This inventory covers the authored runtime modules shipped in this release, and the unchanged optional audio-extractor asset. Game data, third-party loaders and unrelated installed MODs are outside this package.
 
@@ -10,6 +10,6 @@ This inventory covers the authored runtime modules shipped in this release, and 
 
 OFF does not disable catalog calibration/cache, population APIs, safe allocation checks, update notices, or extracted-audio manifests. Those are functional operations.
 
-The inspected Sandbox loader is Ultimate ASI Loader Win32 6.4.0, SHA-256 `CF4A28C41199031F0378A082BF6FACB2575CB13A1C9AB2F5590652AB0E1AC205`. Its exported interface was inventoried; no supported per-MOD diagnostic registration API was identified. This release retains loader ownership, does not invent an ABI and does not modify the loader. Detailed module logs remain explicitly opt-in.
+The isolated RC4 compatibility lab used Ultimate ASI Loader Win32 10.0.2, SHA-256 `63B465DBC1BF9C5AB4E33C3CCAD099D9EDB702F2C51587AC8D4F196497396437`. Its exported interface was inventoried; no supported per-MOD diagnostic registration API was identified. This release retains loader ownership, does not invent an ABI and does not modify the loader. Detailed module logs remain explicitly opt-in.
 
 Temporary ON configurations exist only under isolated release-test directories. The source/default INIs, source archives and runtime ZIP ship OFF. Existing evidence and installed user settings are preserved. Static/build and isolated load tests do not certify real-game icon visibility, audio or every race/MOD combination.

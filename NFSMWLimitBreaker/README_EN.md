@@ -1,6 +1,6 @@
 # NFSMW Limit Breaker companion
 
-Build **0.1.3-resource-headroom.5**, bundled with NFRR 0.1.3. Optional, recommended for retaining ordinary traffic alongside roaming racers and police. NFRR remains usable without LB.
+Build **0.1.3-resource-headroom.6**, bundled with NFRR 0.1.4. Optional, recommended for retaining ordinary traffic alongside roaming racers and police. NFRR remains usable without LB.
 
 ## Installation and limits
 
@@ -20,7 +20,9 @@ When Unlimiter is absent, `AdditionalSkins=1` prepares eight extra native skin/w
 
 When NFSMWUnlimiter is loaded or present in the installation, LB does not install its own skin allocator. After validating an active 20-slot allocator and its actual texture resources, LB can publish unused slots 13–20 in the native free bitmap without replacing Unlimiter allocation/free hooks. Preserve the matching Unlimiter allocation/free implementation and its settings. Its `CarSkinCount` must match the DUMMY_SKIN, DUMMY_WHEEL and DUMMY_SPINNER sets actually available. Do not set 20 or 32 merely because LB allows 32 vehicles.
 
-`PartModelSlots=8192` expands the native car-part eModel pool from stock 1024 with 168 KiB extra reservation. Supported values are 1024–16384; 0 opts out. Unknown patch ownership or an already-created pool prevents installation; another owner's larger reservation is not reduced. It leaves the Cars byte arena and game resource files unchanged.
+`PartModelSlots=8192` expands the native car-part eModel pool from stock 1024 with 168 KiB extra reservation. Supported values are 1024–16384; 0 opts out. Unknown patch ownership or an already-created pool prevents installation; another owner's larger reservation is not reduced. This model-pool setting is independent of car streaming and leaves game resource files unchanged.
+
+On supported LAA executables, RpdStreamingHeadroom enables a guarded extension of the recognized 115 MiB Unlimiter car arena. RpdStreamingPoolMiB defaults to 256; 160, 192 and 224 are also supported. With an invalid value the budget falls back to 160. Disable the option to preserve the existing arena. Changes require a restart.
 
 Resource headroom can improve stability with multiple customized vehicles. It does not resolve all causes of invisible bodies, or certify all-car/16-car endurance.
 

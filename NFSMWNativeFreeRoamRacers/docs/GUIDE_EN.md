@@ -1,8 +1,8 @@
-# MW Native Free Roam Racer — v0.1.3
+# MW Native Free Roam Racer — v0.1.4
 
 Bring roaming AI racers and one-on-one encounter battles to Rockport in Need for Speed Most Wanted (2005).
 
-NFRR is the main mod. **NFSMW Limit Breaker (LB) 0.1.3-resource-headroom.5 is included as an optional companion, and using them together is recommended.** NFRR also works without LB.
+NFRR is the main mod. **NFSMW Limit Breaker (LB) 0.1.3-resource-headroom.6 is included as an optional companion, and using them together is recommended.** NFRR also works without LB.
 
 ## Why use the included Limit Breaker?
 
@@ -69,7 +69,7 @@ Edit `scripts/NFSMWNativeFreeRoamRacers.ini` while the game is closed, then rest
 
 No game audio is included. The separate **NFSU2EncounterAudioExtractor v1.1.0 no-decoder package** uses your own UG2 `SDATA/sdat.viv`; follow its instructions to supply the decoder separately. Copy the generated `NativeFreeRoamRacers` folder into MW's `scripts`. Keep `speaker**` filenames and `encounter/start`, `player_victory`, `player_defeat` folders. Voices are non-positional and follow game voice volume. No `Setting.ini` is needed; battles work without voices.
 
-Startup update notices query public GitHub metadata without downloading/installing anything. Stable v0.1.3 considers newer stable releases, not Alpha builds. `[Updates] Enabled = 0` disables communication and notices. `Language = auto` follows the encounter language; Japanese uses Japanese, other languages use English. Offline/errors do not block play. Cooperating mods can serialize their notices.
+Startup update notices query public GitHub metadata without downloading/installing anything. Stable v0.1.4 considers newer stable releases, not Alpha builds. `[Updates] Enabled = 0` disables communication and notices. `Language = auto` follows the encounter language; Japanese uses Japanese, other languages use English. Offline/errors do not block play. Cooperating mods can serialize their notices.
 
 ## Limits, reporting and rights
 
@@ -77,7 +77,7 @@ Vehicle/resource limits and safe anchor availability may keep racers below your 
 
 Shared-model lifetime checks and performance-reference validation improve safety, but do not repair every malformed vehicle mod. The latest pre-release gameplay was stable; actual shared-alias detachment was not observed in that run, so universal CTD prevention is not claimed.
 
-Report version, executable hash, relevant mods/car setup, reproduction steps and `scripts/NFSMWNativeFreeRoamRacers.log` (plus LB log if used). Review logs for personal information before sharing. See `PATCH_NOTES_v0.1.3.md` for changes since public Alpha.59 and `docs/NFSMWLimitBreaker/` for companion details.
+Report version, executable hash, relevant mods/car setup, reproduction steps and `scripts/NFSMWNativeFreeRoamRacers.log` (plus LB log if used). Review logs for personal information before sharing. See the 0.1.4 patch notes for changes from 0.1.3 and `docs/NFSMWLimitBreaker/` for companion details.
 
 Original project code and documentation are licensed under the MIT License in `LICENSE.md`. Third-party rights remain unchanged. The project license grants no rights to game assets or extracted voices.
 
@@ -87,7 +87,7 @@ Original project code and documentation are licensed under the MIT License in `L
 
 NFRR keeps normal settings in `NFSMWNativeFreeRoamRacers.ini`; editor-only fallback uses `NFSMWNativeFreeRoamRacers.editor.ini`. Normal enabled population settings take priority. Event Loader support is advance compatibility, optional and not bundled; it is not needed for encounter battles.
 
-The bundled LB adds `[VehicleResources] AdditionalSkins=1` and `PartModelSlots=4096`. Skin allocation stays with Unlimiter when installed, and its count must match installed texture sets. Read the companion guide before changing skin settings. Fresh LB `[Audio] LBEngineAudioExpansion=0` defaults OFF. Preserve an existing opted-in value when upgrading; six slots still require both modules' settings and capability/allocation checks. Never replace third-party INIs automatically.
+The bundled LB adds `[VehicleResources] AdditionalSkins=1` and `PartModelSlots=8192`. Skin allocation stays with Unlimiter when installed, and its count must match installed texture sets. Read the companion guide before changing skin settings. Fresh LB `[Audio] LBEngineAudioExpansion=0` defaults OFF. Preserve an existing opted-in value when upgrading; six slots still require both modules' settings and capability/allocation checks. Never replace third-party INIs automatically.
 
 Detailed logs default OFF: `[Diagnostics] Logging=0`. Only exact `1` opts in after restart; missing/invalid values stay OFF. Diagnostic telemetry/frame timing is skipped while OFF, but functional catalog caching continues. Keep temporary logging out of normal/distribution settings.
 
@@ -99,3 +99,7 @@ NFSPatcher EN1.3 (6029312 bytes): 80774C2E5D619B4F120B48D4462896FD504C263399D203
 NFSPatcher EN1.3 LAA (6029312 bytes): B248271BF8EAC8C9B283B8C95E3ADD672B713BF529B05F1780E58268493B9D06
 Redux 3.04 LAA (5926912 bytes): 0C5675A08CD71FD6D31CA87E992A915054BD8B80D268BFF0561D7ECC2067E342
 ```
+
+## Updating from 0.1.3 to 0.1.4
+
+Close the game and replace the NFRR ASI and, if installed, the optional Limit Breaker ASI from the new ZIP. Keep your settings and saves. Compare the new LB streaming options and restart the game. W2C to MW RC4 Preview is optional and distributed separately.
